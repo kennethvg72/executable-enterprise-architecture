@@ -1,0 +1,33 @@
+# Approved dependencies for Android apps (AND-02, SIM-01, SIM-05). Group:artifact, as in the
+# version catalog. Anything not listed here needs a decision record whose "Dependencies"
+# section names it.
+
+dependencies:
+  - name: org.jetbrains.kotlinx:kotlinx-coroutines-android
+    reason: Asynchronous work, the Kotlin way.
+  - name: org.jetbrains.kotlinx:kotlinx-serialization-json
+    reason: JSON for API calls, without reflection.
+  - name: androidx.core:core-ktx
+    reason: The platform's own compatibility layer.
+  - name: androidx.activity:activity-compose
+    reason: Compose entry point.
+  - name: androidx.compose:compose-bom
+    reason: The user interface (AND-02); one version for all Compose libraries.
+  - name: androidx.lifecycle:lifecycle-viewmodel-compose
+    reason: State that survives configuration changes.
+  - name: androidx.navigation:navigation-compose
+    reason: Screens and the back stack.
+  - name: androidx.room:room-runtime
+    reason: The offline command queue and cache (AND-07).
+  - name: androidx.work:work-runtime-ktx
+    reason: Background sync with backoff (AND-07).
+  - name: com.microsoft.identity.client:msal
+    reason: Sign-in with the workforce IdP through its broker, so device compliance counts (AND-04). Security protocols are never built (SEC-10).
+  - name: com.squareup.okhttp3:okhttp
+    reason: HTTP, with timeouts and TLS done right.
+  - name: junit:junit
+    reason: Unit tests.
+  - name: androidx.test.ext:junit
+    reason: Instrumented tests.
+  - name: androidx.compose.ui:ui-test-junit4
+    reason: Compose UI tests (AND-09).

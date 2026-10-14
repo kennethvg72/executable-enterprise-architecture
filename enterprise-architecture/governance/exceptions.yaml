@@ -1,0 +1,17 @@
+# Exceptions granted by the Architecture Board. The pipeline reads this file; applications
+# can't grant themselves exceptions. Every exception has an owner, an expiry date (at most
+# 12 months), the rules it covers and the compensating controls (governance/escalation.md).
+
+exceptions:
+  - id: EXC-2026-003
+    application: data-warehouse
+    rules: [DAT-02]
+    reason: >
+      Receives full submissions, including taxpayer identifiers, through the integration
+      broker. The replacement feed (filing references and aggregates only) is being built.
+    compensating-controls: >
+      Access limited to four named analysts; quarterly access review; encrypted at rest.
+    owner: rcho
+    granted: 2026-07-01
+    expires: 2027-06-30
+    record: enterprise-architecture/landscape/accumulated-complexity.md

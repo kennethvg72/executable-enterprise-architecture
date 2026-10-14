@@ -1,0 +1,12 @@
+node_modules/
+*.log
+.env
+.env.*
+!.env.example
+
+# The draft article this repository accompanies
+paper.md
+
+# Large; regenerate with npm run generate
+network/generated/probes.json
+bootstrap-notes.md

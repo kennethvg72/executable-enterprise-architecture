@@ -1,0 +1,16 @@
+# What this platform is for, and its limits. The pipeline reads this file (validate-manifest).
+
+platform: android
+runs-on: devices                   # NATAX-managed devices; the app reaches NATAX only through its backend's API (AND-05)
+resilience-classes: [A, B, C]      # the app's availability is its backend's; offline-first covers the gaps (AND-07, RES-11)
+max-classification: confidential  # on the device; Taxpayer-Restricted data is never stored there (AND-03)
+exposure: [internal]               # staff on managed devices; customers use NATAX's web applications (AND-01)
+data-stores: [device]              # the device's encrypted local storage, declared like any other store (DAT-01)
+dependencies: approved-dependencies.yaml
+checks:                            # dependency verification is enforced by gradle/verification-metadata.xml in every build (AND-08)
+  - { name: Build, lint and unit tests, rule: AND-09, run: ./gradlew check, needs: gradlew }
+  - { name: UI tests on managed emulators, rule: AND-09, run: ./gradlew allDevicesCheck, needs: gradlew }
+required-evidence:                 # checks a real pipeline runs, that this proof of concept doesn't automate
+  - The merged release manifest has no exported component, permission or backup setting without a decision record (AND-03, AND-06, AND-10).
+  - The release APK contains no secrets and isn't debuggable (AND-03, SEC-03).
+  - The UI tests actually ran on every configured managed device (AND-09).

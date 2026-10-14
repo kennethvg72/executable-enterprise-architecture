@@ -1,0 +1,423 @@
+# The NATAX landscape, machine-readable.
+#
+# Central IT owns this file. The pipeline's tools combine it with each application's
+# architecture.yaml to generate network policy (network/) and load balancer
+# configuration (infrastructure/), and to check capacity and topology.
+#
+# Human-readable versions: sites.md, network.md, applications.md.
+# Infrastructure basics (DNS, NTP, the workload certificate authority) are left out to
+# keep the example readable.
+#
+# peak-vcpu: the vCPU a service needs to carry the planning peak (1.5 x last year's
+# measured peak) from one datacenter. Production reserves it in BOTH datacenters (RES-03).
+
+sites:
+  dc1:
+    name: Datacenter 1
+    kind: datacenter
+    prefix: 10.1.0.0/16
+    capacity-vcpu: 1800
+    test-acceptance-vcpu: 750       # typical use; runs at lower priority on capacity production reserves but doesn't use (RES-03)
+  dc2:
+    name: Datacenter 2
+    kind: datacenter
+    prefix: 10.2.0.0/16
+    capacity-vcpu: 1800
+    test-acceptance-vcpu: 750
+  hq:
+    name: Headquarters
+    kind: witness                   # quorum only; no production workloads (RES-04)
+    prefix: 10.3.0.0/16
+    transit: true                   # routes DC1 <-> DC2 traffic when the direct link is down
+
+# Links between sites. Only "wan" links are in-band. Voting members may depend on
+# in-band links only (RES-04).
+links:
+  - { between: [dc1, dc2], network: wan, gbps: 100, description: Direct dark fiber }
+  - { between: [dc1, hq], network: wan, gbps: 10 }
+  - { between: [dc2, hq], network: wan, gbps: 10 }
+  - { between: [dc1, internet], network: internet, gbps: 20 }
+  - { between: [dc2, internet], network: internet, gbps: 20 }
+  - { between: [hq, internet], network: internet, gbps: 2, description: Office internet only }
+
+# Groups of addresses that aren't services: people's devices, the internet, non-production.
+zones:
+  internet:
+    description: Everyone. Customers reach NATAX only through the edge load balancers.
+    cidrs: [0.0.0.0/0]
+  workforce:
+    description: Staff devices at HQ and on the workforce VPN.
+    cidrs: [10.3.100.0/22, 10.251.0.0/16]
+  paw:
+    description: Privileged access workstations, at HQ and on the PAW VPN (IAM-06).
+    cidrs: [10.3.90.0/24, 10.250.0.0/24]
+  test-acceptance:
+    description: Test and acceptance environments in both datacenters. Never production (SEC-07).
+    cidrs: [10.1.60.0/22, 10.2.60.0/22]
+
+# Destinations outside NATAX. Reached only through the egress proxy, and only by the
+# services listed under consumers (INT-05).
+externals:
+  tax-authority:
+    fqdn: submit.tax-authority.example
+    port: 443
+    consumers: [efile-gateway]
+  workforce-idp:
+    fqdn: login.workforce-idp.example
+    port: 443
+    consumers: any                  # every internal application signs staff in here
+  email-provider:
+    fqdn: api.mail-provider.example
+    port: 443
+    consumers: [notification-service]
+  sms-provider:
+    fqdn: api.sms-provider.example
+    port: 443
+    consumers: [notification-service]
+  payment-processor:
+    fqdn: api.payment-processor.example
+    port: 443
+    consumers: [payments]
+  power-platform-relay:
+    fqdn: "*.servicebus.windows.net"
+    port: 443
+    consumers: [data-gateway]        # the data gateway connects out; nothing connects in (PA-07)
+
+# Flows every production service has, without declaring them (platform services).
+platform-flows:
+  - { from: all-production, to: observability, port: 6514, purpose: Ship logs (OBS-01) }
+  - { from: all-production, to: secret-store, port: 8200, purpose: Fetch secrets at runtime (SEC-03) }
+  - { from: observability, to: all-production, port: 9464, purpose: Scrape metrics (OBS-02) }
+  - { from: zone:paw, to: all-production, port: 22, purpose: Just-in-time administration (IAM-06) }
+
+# Production services. Each application's entry is registered from its architecture.yaml
+# at its first release, and kept in step by the pipeline (landscape.md is the readable
+# inventory). New applications not yet registered can be checked with --app <dir>.
+services:
+
+  # ---------------------------------------------------------------- platform
+  edge-adc:
+    kind: load-balancer
+    description: Commercial load balancer appliances at the internet edge (WAF, DDoS protection, TLS).
+    class: A
+    owner: central-it
+    appliance: true                 # no host firewall; policy enforced around it
+    vips: [{ site: dc1, address: 10.1.10.10 }, { site: dc2, address: 10.2.10.10 }]
+    instances:
+      - { site: dc1, address: 10.1.10.11 }
+      - { site: dc1, address: 10.1.10.12 }
+      - { site: dc2, address: 10.2.10.11 }
+      - { site: dc2, address: 10.2.10.12 }
+    peak-vcpu: 0                    # appliances; not on shared compute
+
+  platform-lb:
+    kind: load-balancer
+    description: HAProxy pairs for internal applications and database endpoints (infrastructure/).
+    class: A
+    owner: central-it
+    vips: [{ site: dc1, address: 10.1.50.10 }, { site: dc2, address: 10.2.50.10 }]
+    instances:
+      - { site: dc1, address: 10.1.50.11 }
+      - { site: dc1, address: 10.1.50.12 }
+      - { site: dc2, address: 10.2.50.11 }
+      - { site: dc2, address: 10.2.50.12 }
+    peak-vcpu: 16
+
+  egress-proxy:
+    kind: proxy
+    description: The only way out to the internet. Allows each service only its declared externals.
+    class: A
+    owner: central-it
+    instances:
+      - { site: dc1, address: 10.1.50.30 }
+      - { site: dc1, address: 10.1.50.31 }
+      - { site: dc2, address: 10.2.50.30 }
+      - { site: dc2, address: 10.2.50.31 }
+    provides: [{ name: proxy, port: 3128, consumers: declared-externals }]
+    peak-vcpu: 8
+
+  secret-store:
+    kind: platform
+    class: A
+    owner: central-it
+    instances:
+      - { site: dc1, address: 10.1.50.20 }
+      - { site: dc1, address: 10.1.50.21 }
+      - { site: dc2, address: 10.2.50.20 }
+      - { site: dc2, address: 10.2.50.21 }
+    provides: [{ name: api, port: 8200, consumers: all-production }]
+    peak-vcpu: 8
+
+  observability:
+    kind: platform
+    description: Central logs, metrics and alerting.
+    class: A
+    owner: central-it
+    instances:
+      - { site: dc1, address: 10.1.50.40 }
+      - { site: dc1, address: 10.1.50.41 }
+      - { site: dc2, address: 10.2.50.40 }
+      - { site: dc2, address: 10.2.50.41 }
+    provides: [{ name: logs, port: 6514, consumers: all-production }]
+    peak-vcpu: 64
+
+  data-gateway:
+    kind: platform
+    description: On-premises data gateway cluster. The only path from Power Apps to NATAX APIs (PA-07). Outbound connections only.
+    class: B
+    owner: central-it
+    instances: [{ site: dc1, address: 10.1.50.60 }, { site: dc2, address: 10.2.50.60 }]
+    consumes:
+      - { external: power-platform-relay, purpose: The gateway's outbound connection to the Power Platform }
+      # One entry per NATAX API that Power Apps may call, each approved by its provider (INT-06). None today.
+    peak-vcpu: 8
+
+  etcd-quorum:
+    kind: quorum
+    description: Consensus store for PostgreSQL failover. One voting member per site (RES-04).
+    class: A
+    owner: central-it
+    voting: true
+    instances:
+      - { site: dc1, address: 10.1.30.21 }
+      - { site: dc2, address: 10.2.30.21 }
+      - { site: hq, address: 10.3.70.21 }
+    provides:
+      - { name: client, port: 2379, consumers: [core-db, app-db] }
+      - { name: peer, port: 2380, consumers: [etcd-quorum] }
+    consumes:
+      - { service: etcd-quorum, interface: peer, purpose: Raft consensus between the three sites }
+    peak-vcpu: 4
+
+  # ---------------------------------------------------------------- data
+  core-db:
+    kind: database-cluster
+    description: PostgreSQL for class A, Taxpayer-Restricted data. Patroni, synchronous replica.
+    class: A
+    owner: central-it
+    classification: taxpayer-restricted
+    replication:                    # RES-05; rendered into Patroni configuration by infrastructure/
+      synchronous: true
+      strict: false                 # keep accepting writes when the replica is lost
+      promote: synchronous-replica-only
+      watchdog: required            # fences a primary that loses its leader lock
+    instances: [{ site: dc1, address: 10.1.30.11 }, { site: dc2, address: 10.2.30.11 }]
+    provides:
+      - { name: postgres, port: 5432, via: platform-lb, frontend-port: 5433, health: { port: 8008, path: /primary }, consumers: database-owners }
+      - { name: replication, port: 5432, consumers: [core-db] }
+      - { name: patroni, port: 8008, consumers: [core-db] }
+    databases:
+      - { name: returns, owner: returns-service }
+      - { name: efile, owner: efile-gateway }
+    consumes:
+      - { service: core-db, interface: replication, purpose: Synchronous replication to the other datacenter }
+      - { service: core-db, interface: patroni, purpose: Patroni member coordination }
+      - { service: etcd-quorum, interface: client, purpose: Leader election }
+    peak-vcpu: 96
+
+  app-db:
+    kind: database-cluster
+    description: PostgreSQL for class B and C applications, up to Confidential data.
+    class: B
+    owner: central-it
+    classification: confidential
+    replication:                    # RES-05; rendered into Patroni configuration by infrastructure/
+      synchronous: true
+      strict: false                 # keep accepting writes when the replica is lost
+      promote: synchronous-replica-only
+      watchdog: required            # fences a primary that loses its leader lock
+    instances: [{ site: dc1, address: 10.1.30.31 }, { site: dc2, address: 10.2.30.31 }]
+    provides:
+      - { name: postgres, port: 5432, via: platform-lb, frontend-port: 5432, health: { port: 8008, path: /primary }, consumers: database-owners }
+      - { name: replication, port: 5432, consumers: [app-db] }
+      - { name: patroni, port: 8008, consumers: [app-db] }
+    databases:
+      - { name: rejection_triage, owner: rejection-triage }
+    consumes:
+      - { service: app-db, interface: replication, purpose: Synchronous replication to the other datacenter }
+      - { service: app-db, interface: patroni, purpose: Patroni member coordination }
+      - { service: etcd-quorum, interface: client, purpose: Leader election }
+    peak-vcpu: 16
+
+  # ---------------------------------------------------------------- customer-facing (class A)
+  filing-web:
+    kind: application
+    description: The tax filing web application taxpayers use.
+    class: A
+    owner: consumer-filing
+    instances:
+      - { site: dc1, address: 10.1.20.11 }
+      - { site: dc1, address: 10.1.20.12 }
+      - { site: dc2, address: 10.2.20.11 }
+      - { site: dc2, address: 10.2.20.12 }
+    provides:
+      - { name: web, port: 8443, via: edge-adc, frontend-port: 443, health: { port: 8443, path: /health/ready }, consumers: [zone:internet] }
+    consumes:
+      - { service: customer-idp, interface: oidc }
+      - { service: returns-service, interface: api }
+      - { service: calc-engine, interface: api }
+      - { service: payments, interface: api }
+    peak-vcpu: 240
+
+  advisor-portal:
+    kind: application
+    description: Portal for accounting firms. Runs on OpenShift.
+    class: A
+    owner: advisor-products
+    platform: openshift
+    # Inbound traffic arrives at each cluster's shared ingress router, which serves every
+    # workload on the cluster. Outbound traffic leaves from the namespace's egress address.
+    # Host policy can't tell workloads apart behind the shared router (see network.md).
+    instances:
+      - { site: dc1, address: 10.1.25.10 }
+      - { site: dc2, address: 10.2.25.10 }
+    egress:
+      - { site: dc1, address: 10.1.25.201 }
+      - { site: dc2, address: 10.2.25.201 }
+    provides:
+      - { name: web, port: 8443, via: edge-adc, frontend-port: 443, health: { port: 8443, path: /health/ready }, consumers: [zone:internet] }
+    consumes:
+      - { service: customer-idp, interface: oidc }
+      - { service: returns-service, interface: api }
+      - { service: calc-engine, interface: api }
+      - { service: payments, interface: api }
+    peak-vcpu: 80
+
+  customer-idp:
+    kind: application
+    description: Identity provider for taxpayers and accounting firms (IAM-01).
+    class: A
+    owner: central-it
+    instances:
+      - { site: dc1, address: 10.1.20.61 }
+      - { site: dc1, address: 10.1.20.62 }
+      - { site: dc2, address: 10.2.20.61 }
+      - { site: dc2, address: 10.2.20.62 }
+    provides:
+      - { name: login, port: 8443, via: edge-adc, frontend-port: 443, health: { port: 8443, path: /health/ready }, consumers: [zone:internet] }
+      - { name: oidc, port: 8444, consumers: [filing-web, advisor-portal] }
+    peak-vcpu: 60
+
+  returns-service:
+    kind: application
+    description: System of record for tax returns.
+    class: A
+    owner: consumer-filing
+    instances:
+      - { site: dc1, address: 10.1.20.71 }
+      - { site: dc1, address: 10.1.20.72 }
+      - { site: dc2, address: 10.2.20.71 }
+      - { site: dc2, address: 10.2.20.72 }
+    provides:
+      - { name: api, port: 8443, consumers: [filing-web, advisor-portal] }
+    consumes:
+      - { service: core-db, interface: postgres, database: returns }
+      - { service: efile-gateway, interface: submissions, purpose: Submits completed returns }
+    peak-vcpu: 120
+
+  calc-engine:
+    kind: application
+    description: The tax calculation engine. Fifteen years old. See accumulated-complexity.md.
+    class: A
+    owner: tax-content
+    instances:
+      - { site: dc1, address: 10.1.20.21 }
+      - { site: dc1, address: 10.1.20.22 }
+      - { site: dc2, address: 10.2.20.21 }
+      - { site: dc2, address: 10.2.20.22 }
+    provides:
+      - { name: api, port: 8443, consumers: [filing-web, advisor-portal] }
+    consumes:
+      - { service: integration-broker, interface: amqps, purpose: Receives tax table updates (legacy) }
+    peak-vcpu: 200
+
+  efile-gateway:
+    kind: application
+    description: Submits returns to the Tax Authority and receives acknowledgements and rejections.
+    class: A
+    owner: filing-operations
+    instances:
+      - { site: dc1, address: 10.1.20.41 }
+      - { site: dc1, address: 10.1.20.42 }
+      - { site: dc2, address: 10.2.20.41 }
+      - { site: dc2, address: 10.2.20.42 }
+    provides:
+      - { name: submissions, port: 8443, consumers: [returns-service] }
+      # rejection-triage added 2026-10-14, approved by the efile-gateway Problem Owner (INT-06).
+      - { name: rejections-api, port: 8444, consumers: [rejection-triage] }
+    consumes:
+      - { service: core-db, interface: postgres, database: efile }
+      - { service: notification-service, interface: api, purpose: Tells customers their return was accepted or rejected }
+      - { service: integration-broker, interface: amqps, purpose: Publishes acknowledgements (legacy) }
+      - { external: tax-authority }
+    peak-vcpu: 60
+
+  payments:
+    kind: application
+    description: Fees and refund transfers. Lives in the payments zone.
+    class: A
+    owner: finance-systems
+    instances:
+      - { site: dc1, address: 10.1.40.11 }
+      - { site: dc1, address: 10.1.40.12 }
+      - { site: dc2, address: 10.2.40.11 }
+      - { site: dc2, address: 10.2.40.12 }
+    provides:
+      - { name: api, port: 8443, consumers: [filing-web, advisor-portal] }
+    consumes:
+      - { external: payment-processor }
+    peak-vcpu: 40
+
+  # ---------------------------------------------------------------- internal
+  notification-service:
+    kind: application
+    description: The only way to email, text or write to customers (INT-05). Templated and audited.
+    class: B
+    owner: customer-communications
+    instances: [{ site: dc1, address: 10.1.20.51 }, { site: dc2, address: 10.2.20.51 }]
+    provides:
+      - { name: api, port: 8443, consumers: [efile-gateway] }
+    consumes:
+      - { external: email-provider }
+      - { external: sms-provider }
+    peak-vcpu: 24
+
+  integration-broker:
+    kind: application
+    description: Legacy message broker. Contained (INT-02); no new consumers.
+    class: B
+    owner: central-it
+    contained: true
+    instances: [{ site: dc1, address: 10.1.20.81 }, { site: dc2, address: 10.2.20.81 }]
+    provides:
+      - { name: amqps, port: 5671, consumers: [calc-engine, efile-gateway, data-warehouse] }
+    peak-vcpu: 16
+
+  data-warehouse:
+    kind: application
+    description: Reporting. Holds copies it shouldn't (see accumulated-complexity.md). DC1 only.
+    class: C
+    owner: finance-systems
+    instances: [{ site: dc1, address: 10.1.20.91 }]
+    consumes:
+      - { service: integration-broker, interface: amqps }
+    peak-vcpu: 64
+
+  rejection-triage:
+    kind: application
+    description: Customer Support works through e-file rejections. Citizen-developed (typescript-web).
+    class: B
+    owner: customer-support
+    platform: typescript-web
+    instances: [{ site: dc1, address: 10.1.20.31 }, { site: dc2, address: 10.2.20.31 }]
+    provides:
+      - { name: web, port: 8443, via: platform-lb, frontend-port: 443, health: { port: 8443, path: /health/ready }, consumers: [zone:workforce] }
+    consumes:
+      - { service: app-db, interface: postgres, database: rejection_triage, purpose: Stores triage state. }
+      - { service: efile-gateway, interface: rejections-api, purpose: Reads new rejections. }
+      - { external: workforce-idp, purpose: Staff sign-in. }
+    peak-vcpu: 4
+
+# Applications whose intent lives in their own repository's architecture.yaml, placed here
+# by Central IT before registration. Empty: every application above is registered.
+placements: {}

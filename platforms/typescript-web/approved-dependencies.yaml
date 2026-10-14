@@ -1,0 +1,14 @@
+# Approved dependencies for TypeScript web applications (TS-05, SIM-01, SIM-05).
+# Anything not listed here needs a decision record whose "Dependencies" section names it.
+
+dependencies:
+  - name: pg
+    reason: The PostgreSQL driver. Talking the PostgreSQL wire protocol isn't something to build.
+  - name: openid-client
+    reason: OIDC sign-in (IAM-02). A certified implementation; security protocols are never built (SEC-10).
+  - name: typescript
+    reason: Type checking only (tsc --noEmit). Node.js runs the code directly.
+  - name: "@types/node"
+    reason: Type definitions for Node.js.
+  - name: "@types/pg"
+    reason: Type definitions for pg.

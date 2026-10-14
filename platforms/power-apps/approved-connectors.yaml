@@ -1,0 +1,41 @@
+# Connector classification for the Power Platform's data loss prevention (DLP) policies (PA-08).
+# Central IT generates the tenant's DLP policies from this file, by connector ID, and checks them
+# daily for drift. An app's connectors (architecture.yaml: runtime.connectors) must be in
+# "business". DLP decides which connectors, not which destinations or records (PA-08).
+
+default-group: blocked            # every connector not listed, including ones the platform adds later
+
+business:
+  - name: Microsoft Dataverse
+    id: shared_commondataserviceforapps
+    reason: The app's own data (PA-03).
+  - name: SharePoint
+    id: shared_sharepointonline
+    reason: The app's own data in lists (PA-03). Narrowed to the app's sites where the platform supports it.
+  - name: Office 365 Users
+    id: shared_office365users
+    reason: "Look up colleagues: names, managers."
+  - name: Microsoft Teams
+    id: shared_teams
+    reason: Notify staff, post to a team's channel.
+  - name: Office 365 Outlook
+    id: shared_office365
+    reason: Email to staff only. Mail flow rules block customers as recipients; email to customers goes through notification-service (INT-05).
+  - name: Approvals
+    id: shared_approvals
+    reason: Standard approval flows.
+  - name: NATAX custom connectors
+    id: custom connectors published by Central IT, through the on-premises data gateway
+    reason: The only way to reach NATAX systems, through their published APIs, as the signed-in user (PA-09).
+
+blocked:                          # always blocked, whatever is requested
+  - name: HTTP
+    reason: Arbitrary outbound calls would bypass the DLP policy, the network policy and PA-09.
+  - name: HTTP with Microsoft Entra ID
+    reason: As HTTP.
+  - name: HTTP Webhook
+    reason: As HTTP.
+  - name: SQL Server
+    reason: Applications use the owner's API, never its database (INT-01).
+  - name: Consumer services
+    reason: Personal email, personal cloud storage and social media are paths for NATAX data to leave NATAX.

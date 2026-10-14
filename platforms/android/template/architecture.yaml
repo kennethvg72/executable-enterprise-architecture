@@ -1,0 +1,55 @@
+# architecture.yaml for an Android app. See enterprise-architecture/templates/architecture.yaml for
+# what every field means, and platforms/android/platform.yaml for this platform's limits.
+# The app's backend is a separate application, with its own architecture.yaml.
+
+application: my-android-app
+description: One sentence. What problem does it solve, for whom?
+
+problem-owner: jdoe
+technical-owner: null                # the app's backend API (staff-edge) needs one; the app itself may not
+landscape-check: docs/decisions/0000-landscape-check.md   # SIM-09
+
+architecture:
+  enterprise-architecture: 1.0.0
+  android: 1.0.0
+  network: 1.0.0
+  infrastructure: 1.0.0
+
+exposure: internal                   # staff on managed devices (AND-01)
+
+users:
+  identity-provider: workforce       # through the IdP's broker, with device compliance (AND-04)
+  roles:
+    - name: user
+      group: my-android-app-users
+      description: What this role can do. The backend enforces it (AND-05).
+
+data:
+  - store: device                    # what the app keeps on the device, sealed with a Keystore key (AND-03)
+    database: offline cache
+    classification: internal         # at most confidential
+    system-of-record-for: []         # never: the server is the system of record (AND-07)
+    retention: P1D                   # how long cached data may live on the device
+
+resilience:
+  class: C
+  statement: >
+    In the Problem Owner's words: how long can users work offline, and what happens when
+    the backend is down?
+
+runtime:
+  technology: android
+  distribution: managed-play         # private app for NATAX's organization (AND-01)
+
+consumes: []
+# The app's API, published at the edge for managed devices (staff-edge, AND-05), once its backend is registered:
+#  - service: my-backend
+#    interface: api
+#    purpose: Everything the app does.
+
+alerts:                              # OBS-04, AND-11
+  - name: CrashRateHigh
+    owner: problem-owner
+    runbook: docs/runbooks/crash-rate.md
+
+temporary: []

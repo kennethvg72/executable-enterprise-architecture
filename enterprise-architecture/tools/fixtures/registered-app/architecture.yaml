@@ -1,0 +1,86 @@
+# A known-good manifest for the tools' tests: a copy of rejection-triage's, which lives in its own repository.
+
+application: rejection-triage
+description: >
+  Helps Customer Support work through e-file rejections during the filing season: see
+  rejections grouped by error code, track which customers were contacted, spot spikes.
+
+problem-owner: dwhitfield            # Dana Whitfield, Customer Support Team Lead
+landscape-check: docs/decisions/0000-landscape-check.md   # SIM-09
+technical-owner: null                # citizen-developed; class B, confidential data, internal (OWN-03)
+
+architecture:
+  enterprise-architecture: 1.0.0
+  typescript-web: 1.0.0
+  network: 1.0.0
+  infrastructure: 1.0.0
+
+exposure: internal
+
+users:
+  identity-provider: workforce
+  roles:
+    - name: agent
+      group: rejection-triage-agents
+      description: Sees the rejection queue, claims rejections, records contact attempts and outcomes.
+    - name: lead
+      group: rejection-triage-leads
+      description: Everything an agent can do, plus releasing other agents' claims.
+
+data:
+  - store: app-db
+    database: rejection_triage
+    classification: confidential     # customer names and filing status; no taxpayer identifiers (DAT-02)
+    system-of-record-for: [triage-state]
+    derived-copies: [rejections]     # read-only copy from efile-gateway, refreshed every minute (DAT-03)
+    retention: P18M                  # triage data: this season and the next, for comparing error-code trends
+    audit-retention: P7Y             # audit records (IAM-07), purged by Central IT's owner-role job, not the app
+
+resilience:
+  class: B
+  statement: >
+    During the filing season, agents can fall back to the Tax Authority's portal and the
+    old spreadsheet for about 30 minutes before the rejection queue becomes unmanageable.
+    Losing triage notes is bad but recoverable: agents can re-check a customer's status in
+    the efile gateway. Outside the filing season, a day without it is an inconvenience.
+
+runtime:
+  technology: typescript-web
+  sites: [dc1, dc2]
+  instances-per-site: 1
+  peak-vcpu: 4
+  capacity:
+    peak-requests-per-second: 25     # planning peak: 120 agents in deadline week, refreshing the queue
+    instance-requests-per-second: 400  # measured: see docs/decisions/0004-capacity.md
+
+provides:
+  - name: web
+    port: 8443
+    via: platform-lb
+    frontend-port: 443
+    health: { port: 8443, path: /health/ready }
+    consumers: [zone:workforce]
+
+consumes:
+  - service: app-db
+    interface: postgres
+    database: rejection_triage
+    critical: true
+    purpose: Stores triage state.
+  - service: efile-gateway
+    interface: rejections-api
+    critical: false
+    purpose: Reads new rejections. If it is down, the existing queue still works (RES-07).
+  - external: workforce-idp
+    critical: false
+    purpose: Staff sign-in. Existing sessions continue if it is briefly unavailable.
+
+alerts:
+  - name: ReadinessFailing
+    owner: problem-owner
+    runbook: docs/runbooks/readiness.md
+  - name: RejectionsNotLoading
+    owner: problem-owner
+    runbook: docs/runbooks/rejections-not-loading.md
+
+temporary: []

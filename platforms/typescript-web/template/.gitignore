@@ -1,0 +1,4 @@
+node_modules/
+.env
+*.log
+bootstrap-notes.md

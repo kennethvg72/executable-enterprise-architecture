@@ -1,0 +1,24 @@
+{
+  "name": "natax-enterprise-architecture",
+  "private": true,
+  "description": "An executable Enterprise Architecture for NATAX, a fictional tax software company.",
+  "license": "Unlicense",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test \"enterprise-architecture/tools/**/*.test.ts\" \"network/tools/**/*.test.ts\" \"infrastructure/tools/**/*.test.ts\"",
+    "typecheck": "tsc --noEmit",
+    "generate": "node network/tools/compile.ts && node infrastructure/tools/render.ts",
+    "verify": "node network/tools/verify.ts && node infrastructure/tools/verify.ts",
+    "pipeline": "node enterprise-architecture/tools/pipeline.ts"
+  },
+  "dependencies": {
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "7.0.2"
+  }
+}

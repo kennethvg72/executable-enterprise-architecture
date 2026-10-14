@@ -1,0 +1,182 @@
+# Explicit expectations about the network, written by the Test Agent from intent and
+# independently of the compiler. verify.ts checks the compiled policy against every one.
+#
+# from / to: a service (all its addresses: VIPs for load balancers, instances otherwise),
+#            a service at one site (app-db@dc1), a zone (zone:workforce), or an address.
+# expect:    allow (every source may reach every destination on the port) or
+#            deny (no source may reach any destination on the port).
+
+- name: rejection-triage reaches its own database, through the service endpoint
+  from: rejection-triage
+  to: platform-lb
+  port: 5432
+  expect: allow
+  rule: RES-05
+
+- name: rejection-triage can't reach database nodes directly, not even its own cluster's
+  from: rejection-triage
+  to: app-db
+  port: 5432
+  expect: deny
+  rule: RES-05
+
+- name: rejection-triage can't reach the replica in the other datacenter
+  from: rejection-triage@dc1
+  to: app-db@dc2
+  port: 5432
+  expect: deny
+  rule: RES-05
+
+- name: rejection-triage can't reach the taxpayer database endpoint
+  from: rejection-triage
+  to: platform-lb
+  port: 5433
+  expect: deny
+  rule: DAT-02
+
+- name: rejection-triage can't reach taxpayer database nodes
+  from: rejection-triage
+  to: core-db
+  port: 5432
+  expect: deny
+  rule: DAT-02
+
+- name: rejection-triage reads rejections from the efile gateway
+  from: rejection-triage
+  to: efile-gateway
+  port: 8444
+  expect: allow
+  rule: INT-01
+
+- name: rejection-triage can't submit returns
+  from: rejection-triage
+  to: efile-gateway
+  port: 8443
+  expect: deny
+  rule: SEC-02
+
+- name: rejection-triage does not contact customers (release 1; customer messages come later, through the notification service)
+  from: rejection-triage
+  to: notification-service
+  port: 8443
+  expect: deny
+  rule: INT-05
+
+- name: rejection-triage can't reach the internet directly
+  from: rejection-triage
+  to: 198.51.100.25
+  port: 443
+  expect: deny
+  rule: INT-05
+
+- name: rejection-triage can't reach payments
+  from: rejection-triage
+  to: payments
+  port: 8443
+  expect: deny
+  rule: SEC-02
+
+- name: Staff reach internal applications through the internal load balancer
+  from: zone:workforce
+  to: platform-lb
+  port: 443
+  expect: allow
+  rule: SEC-02
+
+- name: Staff can't bypass the load balancer
+  from: zone:workforce
+  to: rejection-triage
+  port: 8443
+  expect: deny
+  rule: SEC-02
+
+- name: Staff can't reach database endpoints
+  from: zone:workforce
+  to: platform-lb
+  port: 5432
+  expect: deny
+  rule: INT-01
+
+- name: The internet can't reach internal applications
+  from: zone:internet
+  to: platform-lb
+  port: 443
+  expect: deny
+  rule: SEC-02
+
+- name: Administrators reach production from privileged access workstations
+  from: zone:paw
+  to: rejection-triage
+  port: 22
+  expect: allow
+  rule: IAM-06
+
+- name: Ordinary staff devices can't administer production
+  from: zone:workforce
+  to: rejection-triage
+  port: 22
+  expect: deny
+  rule: IAM-06
+
+- name: Servers can't administer each other (no jump hosts)
+  from: data-warehouse
+  to: rejection-triage
+  port: 22
+  expect: deny
+  rule: IAM-06
+
+- name: Test and acceptance can't reach production databases
+  from: zone:test-acceptance
+  to: platform-lb
+  port: 5432
+  expect: deny
+  rule: SEC-07
+
+- name: Test and acceptance can't reach production services
+  from: zone:test-acceptance
+  to: efile-gateway
+  port: 8444
+  expect: deny
+  rule: SEC-07
+
+- name: Database replication works between the datacenters
+  from: app-db@dc1
+  to: app-db@dc2
+  port: 5432
+  expect: allow
+  rule: RES-05
+
+- name: The quorum member at HQ talks to its peers
+  from: etcd-quorum@hq
+  to: etcd-quorum@dc1
+  port: 2380
+  expect: allow
+  rule: RES-04
+
+- name: The data warehouse can't query the taxpayer database directly
+  from: data-warehouse
+  to: platform-lb
+  port: 5433
+  expect: deny
+  rule: INT-01
+
+- name: Only the notification service reaches the email provider
+  from: rejection-triage
+  to: egress-proxy
+  port: 3128
+  expect: allow   # allowed to the proxy for staff sign-in; the proxy allowlist blocks the email provider
+  rule: INT-05
+
+- name: The Power Platform's data gateway can't reach databases
+  from: data-gateway
+  to: platform-lb
+  port: 5432
+  expect: deny
+  rule: PA-07
+
+- name: The data gateway reaches the internet only through the egress proxy
+  from: data-gateway
+  to: 198.51.100.25
+  port: 443
+  expect: deny
+  rule: INT-05

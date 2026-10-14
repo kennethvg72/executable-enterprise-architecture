@@ -1,0 +1,82 @@
+# architecture.yaml: what this application is, who owns it, which architecture governs
+# it, and what it needs from the rest of the landscape.
+#
+# Copy this file to the root of the application's repository. The pipeline reads it on
+# every release candidate. Keep it true: the network policy, load balancer configuration
+# and database grants are generated from it.
+
+application: my-application          # lowercase, hyphens; unique in the landscape
+description: One sentence. What problem does it solve, for whom?
+
+problem-owner: jdoe                  # a person's workforce directory id (OWN-01)
+landscape-check: docs/decisions/0000-landscape-check.md   # SIM-09: what already exists, who was asked, the outcome
+technical-owner: null                # a team; required for class A, internet exposure, or taxpayer-restricted data (OWN-03)
+
+architecture:                        # pinned versions (OWN-04)
+  enterprise-architecture: 1.0.0
+  typescript-web: 1.0.0
+  network: 1.0.0
+  infrastructure: 1.0.0
+
+exposure: internal                   # internal | internet
+
+users:
+  identity-provider: workforce       # workforce | customer, never both (IAM-01)
+  roles:                             # IAM-04: assigned through IdP groups, never in the application
+    - name: user
+      group: my-application-users
+      description: What this role can do.
+
+data:                                # every data store (DAT-01)
+  - store: app-db                    # a database cluster from the landscape
+    database: my_application
+    classification: internal         # public | internal | confidential | taxpayer-restricted
+    system-of-record-for: []         # entities this application is the system of record for (DAT-03)
+    derived-copies: []               # read-only copies of other systems' entities, refreshed from them (DAT-03)
+    retention: P2Y                   # ISO 8601 duration (DAT-05)
+
+resilience:
+  class: C                           # A | B | C (RES-01)
+  statement: >
+    In the Problem Owner's words: how long can users manage without it, how much
+    recent data could they afford to lose, and when does it matter most?
+
+runtime:
+  technology: typescript-web
+  sites: [dc1]                       # class A and B: [dc1, dc2] (RES-02)
+  instances-per-site: 1
+  peak-vcpu: 2                       # vCPU to carry the planning peak from one site (RES-03)
+  capacity:
+    peak-requests-per-second: 5      # the planning peak: 1.5 x last year's measured peak (RES-10)
+    instance-requests-per-second: 50 # measured by load test; instances-per-site x this must cover the planning peak
+
+provides:
+  - name: web
+    port: 8443
+    via: platform-lb                 # published through the internal load balancer
+    frontend-port: 443
+    health: { port: 8443, path: /health/ready }   # readiness (RES-06)
+    consumers: [zone:workforce]
+
+consumes: []                         # every outbound dependency (INT-01, network policy)
+#  - service: app-db                 # a service in the landscape...
+#    interface: postgres
+#    database: my_application
+#    critical: true                  # readiness fails without it (RES-06)
+#    purpose: Why.
+#  - external: workforce-idp         # ...or an external destination, through the egress proxy
+#    critical: false
+#    purpose: Staff sign-in.
+
+alerts:                              # OBS-04
+  - name: ReadinessFailing
+    owner: problem-owner
+    runbook: docs/runbooks/readiness.md
+
+temporary: []                        # temporary complexity with an end date (SIM-07)
+#  - what: Feature flag for the new queue view
+#    owner: jdoe
+#    remove-by: 2027-01-31
+
+# Exceptions are not declared here. Only the Architecture Board grants them, and they are
+# recorded centrally in enterprise-architecture/governance/exceptions.yaml.

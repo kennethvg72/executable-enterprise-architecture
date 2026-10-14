@@ -1,0 +1,15 @@
+# A stand-in for the workforce directory (the workforce IdP), which the pipeline queries
+# to check that Problem Owners are active employees (OWN-01). Fictional people.
+
+people:
+  - { id: dwhitfield, name: Dana Whitfield, title: Customer Support Team Lead, status: active }
+  - { id: mellis, name: Morgan Ellis, title: Chief Architect, status: active }
+  - { id: praman, name: Priya Raman, title: Filing Operations Manager, status: active }
+  - { id: tokafor, name: Tunde Okafor, title: Head of Consumer Filing, status: active }
+  - { id: sbergstrom, name: Sofia Bergström, title: Customer Communications Lead, status: active }
+  - { id: jalvarez, name: Jordan Alvarez, title: Head of Central IT, status: active }
+  - { id: hvandijk, name: Hanna van Dijk, title: Tax Content Lead, status: active }
+  - { id: rcho, name: Robin Cho, title: Finance Systems Manager, status: active }
+  - { id: mbrandt, name: Maya Brandt, title: Support Operations Manager, status: active }
+  - { id: lfischer, name: Lena Fischer, title: HR Systems Lead, status: active }
+  - { id: aquinn, name: Alex Quinn, title: Former Support Analyst, status: left }

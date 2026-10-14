@@ -1,0 +1,16 @@
+# What this platform is for, and its limits. The pipeline reads this file (validate-manifest).
+
+platform: power-apps
+runs-on: saas                      # Microsoft 365 / Power Platform: availability is inherited, accepted once by the Board (RES-11, PA-01)
+resilience-classes: [B, C]         # class A never runs on a platform NATAX can't fail over itself
+max-classification: confidential  # Taxpayer-Restricted data never enters the tenant
+exposure: [internal]               # staff only: no Power Pages, no guests (PA-10)
+data-stores: [dataverse, sharepoint]
+dependencies: approved-connectors.yaml
+checks:                            # run by the pipeline's deterministic stage, in the application's repository
+  - { name: Managed solution and solution checker, rule: PA-13, run: pac solution pack --zipfile out/solution.zip --folder solution --packagetype Managed && pac solution check --path out/solution.zip --outputDirectory out/checker, needs: pac }
+  - { name: Playwright app and permission tests, rule: PA-12, run: npx playwright test, needs: node_modules }
+required-evidence:                 # checks a real pipeline runs, that this proof of concept doesn't automate
+  - The solution checker's results contain no High or Critical findings (PA-13).
+  - The tenant's DLP policies, environment security groups and guest settings match approved-connectors.yaml and PA-05/PA-10.
+  - The app's sharing matches the approved groups after import (PA-10).

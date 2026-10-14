@@ -1,0 +1,44 @@
+# Status of every architecture version. The pipeline reads this file.
+# Statuses: proposed | active | deprecated | decommissioned | withdrawn (see lifecycle.md)
+
+architectures:
+  enterprise-architecture:
+    - version: 1.0.0
+      status: active
+      activated: 2026-10-14
+    - version: 1.1.0
+      status: proposed
+      proposal: enterprise-architecture/governance/proposals/2026-001-deadline-night-coverage.md
+      activation-planned: 2026-11-01
+
+  typescript-web:
+    - version: 1.0.0
+      status: active
+      activated: 2026-10-14
+
+  power-apps:
+    - version: 1.0.0
+      status: active
+      activated: 2026-10-14
+
+  android:
+    - version: 1.0.0
+      status: active
+      activated: 2026-10-14
+
+  network:
+    - version: 1.0.0
+      status: active
+      activated: 2026-10-14
+
+  infrastructure:
+    - version: 1.0.0
+      status: active
+      activated: 2026-10-14
+
+# Rules the Board has made mandatory for every application, regardless of pinned version.
+mandatory-immediately: []
+#  - rule: SEC-05
+#    from-version: enterprise-architecture 1.1.0
+#    reason: ...
+#    since: YYYY-MM-DD

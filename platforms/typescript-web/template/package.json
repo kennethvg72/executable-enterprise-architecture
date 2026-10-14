@@ -1,0 +1,26 @@
+{
+  "name": "my-application",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/main.ts",
+    "dev": "node --env-file-if-exists=.env --watch src/main.ts",
+    "migrate": "node --env-file-if-exists=.env src/migrate.ts",
+    "db:setup": "node --env-file-if-exists=.env scripts/db-setup.ts",
+    "smoke": "node --env-file-if-exists=.env scripts/smoke.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --env-file-if-exists=.env --test --test-concurrency=1 \"test/**/*.test.ts\""
+  },
+  "dependencies": {
+    "openid-client": "6.8.8",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/pg": "8.23.1",
+    "typescript": "7.0.2"
+  }
+}
