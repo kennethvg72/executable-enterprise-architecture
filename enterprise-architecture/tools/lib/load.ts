@@ -41,7 +41,10 @@ export interface Platform {
   exposure: string[];
   'data-stores': string[];
   dependencies: string;
-  checks: { name: string; rule: string; run: string; needs: string; database?: boolean }[];
+  /** How the pipeline installs the candidate's dependencies itself, from its lockfile, without running install scripts (SEC-13). */
+  install?: string;
+  /** Every check is mandatory unless marked optional: a mandatory check that can't run makes the stage INCOMPLETE. */
+  checks: { name: string; rule: string; run: string; needs: string; database?: boolean; optional?: boolean }[];
   'required-evidence'?: string[];
 }
 

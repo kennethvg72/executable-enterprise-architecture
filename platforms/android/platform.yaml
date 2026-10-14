@@ -7,7 +7,8 @@ max-classification: confidential  # on the device; Taxpayer-Restricted data is n
 exposure: [internal]               # staff on managed devices; customers use NATAX's web applications (AND-01)
 data-stores: [device]              # the device's encrypted local storage, declared like any other store (DAT-01)
 dependencies: approved-dependencies.yaml
-checks:                            # dependency verification is enforced by gradle/verification-metadata.xml in every build (AND-08)
+checks:                            # dependency verification is enforced by gradle/verification-metadata.xml in every build (AND-08).
+                                   # The pipeline uses its own Gradle distribution, never the candidate's wrapper JAR (SEC-13).
   - { name: Build, lint and unit tests, rule: AND-09, run: ./gradlew check, needs: gradlew }
   - { name: UI tests on managed emulators, rule: AND-09, run: ./gradlew allDevicesCheck, needs: gradlew }
 required-evidence:                 # checks a real pipeline runs, that this proof of concept doesn't automate

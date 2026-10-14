@@ -1,10 +1,19 @@
 // The deterministic stage of the central pipeline (pipeline/README.md, stage 3), for one
 // application. The Governance Agent runs this and includes the output in its verdict.
 //
-// Usage: npm run pipeline -- <application repository> [--candidate releases/<id>] [--today YYYY-MM-DD]
+// Usage: npm run pipeline -- <application repository> [--candidate releases/<id>] [--today YYYY-MM-DD] [--isolated]
 //
-// A check that can't run here (no test database, no installed dependencies) is reported as
-// SKIPPED, never as passed.
+// Three results, because a check that didn't run proves nothing:
+//   PASS        every mandatory check ran and passed                    exit 0
+//   FAIL        at least one check failed                               exit 1
+//   INCOMPLETE  nothing failed, but a mandatory check couldn't run      exit 3
+// Only PASS lets the stage pass. A check that can't run is reported as SKIPPED, never as passed.
+//
+// The platform's checks run the candidate's own code: its tests, its build scripts, and tools
+// installed from its lockfile. That code is untrusted (SEC-13). It runs only with --isolated,
+// which states that this process is inside a disposable runner whose isolation the hostile
+// canary has verified (verify-runner.ts). --isolated doesn't create isolation; it only says
+// it exists. Without it, those checks are skipped and the stage is INCOMPLETE.
 
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -15,7 +24,7 @@ import { verifyNetwork } from '../../network/tools/verify.ts';
 import { checkDependencies } from './check-dependencies.ts';
 import { checkLinks } from './check-links.ts';
 import { REPO_ROOT, loadManifest, loadModel, loadPlatform, readYaml, withApplications } from './lib/load.ts';
-import { fail, failed, format, pass, skip, type Result } from './lib/report.ts';
+import { fail, failed, format, pass, skip, warn, type Result } from './lib/report.ts';
 import { scanSecrets } from './scan-secrets.ts';
 import { validateManifest } from './validate-manifest.ts';
 
@@ -34,13 +43,17 @@ export function checkFreeze(today: Date, resilienceClass: string, purpose: strin
     : fail('DEL-05', `In the peak freeze, class ${resilienceClass} may release only fixes, not "${purpose}".`, 'Wait until May 4, or release only the fix.');
 }
 
+export type Status = 'PASS' | 'FAIL' | 'INCOMPLETE';
+export const EXIT_CODE: Record<Status, number> = { PASS: 0, FAIL: 1, INCOMPLETE: 3 };
+
 function run(command: string, args: string[], cwd: string): { ok: boolean; output: string } {
-  // npm and npx are scripts on Windows, which need a shell. The arguments are constants.
+  // npm and npx are scripts on Windows, which need a shell. The commands are constants from the
+  // platform's platform.yaml; what they execute is the candidate's code, hence --isolated.
   const r = spawnSync([command, ...args].join(' '), { cwd, encoding: 'utf8', shell: true, timeout: 600_000 });
   return { ok: r.status === 0, output: `${r.stdout ?? ''}${r.stderr ?? ''}` };
 }
 
-export function runPipeline(appDir: string, options: { candidateDir?: string | undefined; today?: Date } = {}): { sections: [string, Result[]][]; ok: boolean } {
+export function runPipeline(appDir: string, options: { candidateDir?: string | undefined; today?: Date; isolated?: boolean } = {}): { sections: [string, Result[]][]; status: Status } {
   const manifest = loadManifest(appDir);
   const sections: [string, Result[]][] = [];
   const candidate = options.candidateDir && existsSync(join(options.candidateDir, 'candidate.yaml'))
@@ -64,13 +77,25 @@ export function runPipeline(appDir: string, options: { candidateDir?: string | u
   // The platform's own checks (platforms/<name>/platform.yaml), in the application's directory.
   const app: Result[] = [];
   const platform = loadPlatform(manifest.runtime.technology);
-  for (const c of platform?.checks ?? []) {
+  // An optional check that can't run is a warning; a mandatory one makes the stage incomplete.
+  const notRun = (c: { rule: string; optional?: boolean }, message: string) =>
+    app.push(c.optional ? warn(c.rule, `Optional, not run: ${message}`) : skip(c.rule, message));
+  let installed = true;
+  if (!options.isolated) {
+    for (const c of platform?.checks ?? []) notRun({ ...c, rule: 'SEC-13' }, `${c.name}: runs the candidate's own code, so only in a disposable runner (--isolated).`);
+  } else if (platform?.install) {
+    const r = run(platform.install, [], appDir);
+    installed = r.ok;
+    app.push(r.ok ? pass('SEC-13', `Dependencies installed by the pipeline: ${platform.install}.`) : fail('SEC-13', `Installing dependencies failed (${platform.install}):
+${r.output.trim().slice(-2000)}`));
+  }
+  for (const c of options.isolated && installed ? platform?.checks ?? [] : []) {
     const available = c.needs === 'node_modules' ? existsSync(join(appDir, 'node_modules'))
       : c.needs === 'gradlew' ? existsSync(join(appDir, 'gradlew'))
       : run(`${c.needs} --version`, [], appDir).ok;
-    if (!available) { app.push(skip(c.rule, `${c.name}: needs ${c.needs}, which isn't available here.`)); continue; }
+    if (!available) { notRun(c, `${c.name}: needs ${c.needs}, which isn't available here.`); continue; }
     if (c.database && !process.env.TEST_DATABASE_URL && !existsSync(join(appDir, '.env'))) {
-      app.push(skip(c.rule, `${c.name}: no test database configured (TEST_DATABASE_URL).`));
+      notRun(c, `${c.name}: no test database configured (TEST_DATABASE_URL).`);
       continue;
     }
     const r = run(c.run, [], appDir);
@@ -82,19 +107,21 @@ export function runPipeline(appDir: string, options: { candidateDir?: string | u
   }
   sections.push([`Application (${manifest.runtime.technology})`, app]);
 
-  return { sections, ok: !sections.some(([, r]) => failed(r)) };
+  const all = sections.flatMap(([, r]) => r);
+  const status: Status = failed(all) ? 'FAIL' : all.some((r) => r.status === 'skip') ? 'INCOMPLETE' : 'PASS';
+  return { sections, status };
 }
 
 if (import.meta.main) {
-  const { values, positionals } = parseArgs({ allowPositionals: true, options: { candidate: { type: 'string' }, today: { type: 'string' } } });
+  const { values, positionals } = parseArgs({ allowPositionals: true, options: { candidate: { type: 'string' }, today: { type: 'string' }, isolated: { type: 'boolean', default: false }, verbose: { type: 'boolean', default: false } } });
   const appDir = resolve(positionals[0] ?? '.');
   const candidateDir = values.candidate ? resolve(appDir, values.candidate) : undefined;
-  const { sections, ok } = runPipeline(appDir, { candidateDir, ...(values.today ? { today: new Date(values.today) } : {}) });
+  const { sections, status } = runPipeline(appDir, { candidateDir, isolated: values.isolated, ...(values.today ? { today: new Date(values.today) } : {}) });
   console.log(`# Deterministic stage: ${appDir.replace(REPO_ROOT, '').replace(/^[\\/]/, '')}\n`);
-  for (const [title, results] of sections) console.log(format(title, results, { verbose: process.argv.includes('--verbose') }));
+  for (const [title, results] of sections) console.log(format(title, results, { verbose: values.verbose }));
   const all = sections.flatMap(([, r]) => r);
   const skipped = all.filter((r) => r.status === 'skip').length;
-  console.log(`**Deterministic stage: ${ok ? 'PASS' : 'FAIL'}**${skipped ? ` (${skipped} skipped: see above; skipped checks are not passes)` : ''}`);
+  console.log(`**Deterministic stage: ${status}**${status === 'INCOMPLETE' ? ` (${skipped} mandatory checks didn't run: see above. Incomplete blocks the verdict like a failure.)` : ''}`);
   // A PASS here is not a release approval. Say plainly what this stage did not check.
   console.log([
     '',
@@ -109,5 +136,5 @@ if (import.meta.main) {
   if (platform?.['required-evidence']?.length) {
     console.log(`\nAlso required on ${platform.platform}, not automated here:\n${platform['required-evidence'].map((e) => `- ${e}`).join('\n')}`);
   }
-  if (!ok) process.exitCode = 1;
+  process.exitCode = EXIT_CODE[status];
 }

@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "generate": "node network/tools/compile.ts && node infrastructure/tools/render.ts",
     "verify": "node network/tools/verify.ts && node infrastructure/tools/verify.ts",
-    "pipeline": "node enterprise-architecture/tools/pipeline.ts"
+    "pipeline": "node enterprise-architecture/tools/pipeline.ts",
+    "verify-runner": "node enterprise-architecture/tools/verify-runner.ts"
   },
   "dependencies": {
     "yaml": "2.9.1"

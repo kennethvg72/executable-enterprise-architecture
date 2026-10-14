@@ -29,4 +29,4 @@ Version: [VERSION](VERSION). Limits: [platform.yaml](platform.yaml). Governed by
 
 ## What isn't runnable here
 
-This repository doesn't contain a Power Platform tenant. The rules, the limits in `platform.yaml` and the manifest checks are real and enforced. The platform checks (the solution checker, the Playwright tests) run wherever the Power Platform CLI and a tenant are available, and the pipeline reports them as skipped elsewhere, never as passed.
+This repository doesn't contain a Power Platform tenant. The rules, the limits in `platform.yaml` and the manifest checks are real and enforced. The platform checks (the solution checker, the Playwright tests) run wherever the Power Platform CLI and a tenant are available, and the pipeline reports them as skipped elsewhere, never as passed. A skipped check leaves the pipeline's result incomplete, which blocks a release like a failure.

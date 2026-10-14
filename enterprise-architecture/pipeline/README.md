@@ -72,7 +72,7 @@ Not everything runs on every change. These run on a schedule, across the whole l
 
 Separating "approve" from "deploy" is separation of duties: neither function can complete a production change on its own. It doesn't make compromise harmless. A compromised Governance Agent could approve something malicious, which is why its decisions are recorded, explained and checkable, and why the deterministic checks can't be overridden. A compromised deployment process holds production write access, which is why it deploys only digests that carry an approved verdict, and why its records are tamper-resistant.
 
-Code from release candidates runs only in disposable, unprivileged runners ([SEC-11](../principles/security.md#sec-11-contain-the-tools-including-the-ai-ones)), never where verdicts are written or deployment credentials live.
+Code from release candidates runs only in disposable, unprivileged runners ([SEC-13](../principles/security.md#sec-13-the-pipeline-treats-every-release-candidate-as-hostile)), never where verdicts are written or deployment credentials live. A hostile canary verifies that isolation, and `pipeline.ts` runs candidate code only with `--isolated`.
 
 ## Running the pipeline here
 
@@ -83,10 +83,28 @@ To run the pipeline against an application in this repository, start a **separat
 The deterministic stage is one command:
 
 ```sh
-npm run pipeline -- <path to the application repository>
+npm run pipeline -- <path to the application repository> [--isolated]
 ```
 
-It validates the manifest against the application's platform, scans for secrets, checks dependencies, compiles and verifies the network policy, renders and verifies the load balancer configuration, checks capacity and topology, and runs the platform's own checks where their tools are available. It reports which checks ran and which were skipped, and the Governance Agent includes that output in the verdict.
+It validates the manifest against the application's platform, scans for secrets, checks dependencies, compiles and verifies the network policy, renders and verifies the load balancer configuration, checks capacity and topology, and runs the platform's own checks. It reports which checks ran and which were skipped, and the Governance Agent includes that output in the verdict.
+
+The result is one of three, because a check that didn't run proves nothing:
+
+| Result | Meaning | Exit code |
+|---|---|---|
+| **PASS** | Every mandatory check ran and passed | 0 |
+| **FAIL** | At least one check failed | 1 |
+| **INCOMPLETE** | Nothing failed, but a mandatory check couldn't run (a missing tool, no test database, no isolated runner) | 3 |
+
+Only PASS lets the stage pass. INCOMPLETE blocks a verdict like a failure; the path forward is to run the missing checks, not to explain them away.
+
+The platform's checks run the candidate's own code: its tests, its build scripts, the tools its lockfile installs. They run only with `--isolated`, which states that the command is running inside a disposable runner ([SEC-13](../principles/security.md#sec-13-the-pipeline-treats-every-release-candidate-as-hostile)). The flag doesn't create isolation; the hostile canary verifies it:
+
+```sh
+node enterprise-architecture/tools/verify-runner.ts    # inside the runner: every escape attempt must fail
+```
+
+Run on a laptop, the canary shows what a release candidate could do there: read its credentials, write outside the workspace, reach the internet. That's why `--isolated` exists. In this proof of concept there is no runner, so a Governance Agent session runs the application's checks only inside its own verified sandbox (BOOTSTRAP, step 4), and says so in its verdict.
 
 In this proof of concept, some things are simulated:
 - Evidence provenance (signed reviews, the Problem Owner's signed "Release") is replaced by files in the repository. The Governance Agent says so in its verdict.

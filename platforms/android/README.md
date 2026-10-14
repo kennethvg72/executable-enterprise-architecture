@@ -28,4 +28,4 @@ An Android app is almost always two applications: the app, and its backend API. 
 
 ## What isn't runnable here
 
-This repository contains no Android SDK or emulator. The rules, the limits and the manifest checks are real and enforced. The Gradle checks run wherever the project and the Android SDK are available, and the pipeline reports them as skipped elsewhere, never as passed.
+This repository contains no Android SDK or emulator. The rules, the limits and the manifest checks are real and enforced. The Gradle checks run wherever the project and the Android SDK are available, and the pipeline reports them as skipped elsewhere, never as passed. A skipped check leaves the pipeline's result incomplete, which blocks a release like a failure.

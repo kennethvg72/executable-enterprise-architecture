@@ -7,6 +7,13 @@
 // A probe expected to be "blocked" passes if the connection times out (dropped by policy).
 // "Refused" also means no connection, but proves the packet reached the host: the policy
 // should have dropped it first, so it is reported as a warning.
+//
+// Three outcomes, because absence of evidence is not evidence of compliance (ZTN-06):
+//   PASS          every probe behaved as the policy says           exit 0
+//   FAIL          at least one probe didn't                         exit 1
+//   INCONCLUSIVE  no failures, but some "blocked" results prove      exit 3
+//                 nothing, because nothing showed the target was up
+// Only PASS lets a verification gate pass.
 
 import { connect } from 'node:net';
 import { readFileSync } from 'node:fs';
@@ -40,6 +47,21 @@ export async function runProbes(probes: Probe[], timeoutMs: number, concurrency 
   return results;
 }
 
+export type Verdict = 'PASS' | 'FAIL' | 'INCONCLUSIVE';
+
+export function classify(results: { probe: Probe; outcome: Outcome }[]) {
+  const wrong = results.filter(({ probe, outcome }) => (probe.expect === 'open') !== (outcome === 'open'));
+  const refused = results.filter(({ probe, outcome }) => probe.expect === 'blocked' && outcome === 'refused');
+  // A blocked probe that times out or errors proves nothing if the target host is simply down.
+  // It counts only if something else from here reached the same host (a positive control).
+  const alive = new Set(results.filter((r) => r.outcome === 'open' || r.outcome === 'refused').map((r) => r.probe.to));
+  const inconclusive = results.filter(({ probe, outcome }) => probe.expect === 'blocked' && (outcome === 'timeout' || outcome === 'error') && !alive.has(probe.to));
+  const verdict: Verdict = wrong.length ? 'FAIL' : inconclusive.length ? 'INCONCLUSIVE' : 'PASS';
+  return { verdict, wrong, refused, inconclusive };
+}
+
+export const EXIT_CODE: Record<Verdict, number> = { PASS: 0, FAIL: 1, INCONCLUSIVE: 3 };
+
 if (import.meta.main) {
   const { values } = parseArgs({
     options: {
@@ -58,12 +80,7 @@ if (import.meta.main) {
     process.exit(2);
   }
   const results = await runProbes(plan, Number(values.timeout));
-  const wrong = results.filter(({ probe, outcome }) => (probe.expect === 'open') !== (outcome === 'open'));
-  const refused = results.filter(({ probe, outcome }) => probe.expect === 'blocked' && outcome === 'refused');
-  // A blocked probe that times out proves nothing if the target host is simply down. Count it
-  // only if something else from here reached the same host (a positive control).
-  const alive = new Set(results.filter((r) => r.outcome === 'open' || r.outcome === 'refused').map((r) => r.probe.to));
-  const inconclusive = results.filter(({ probe, outcome }) => probe.expect === 'blocked' && outcome === 'timeout' && !alive.has(probe.to));
+  const { verdict, wrong, refused, inconclusive } = classify(results);
   for (const { probe } of inconclusive) {
     console.log(`INCONCLUSIVE ${probe.fromLabel} -> ${probe.toLabel} ${probe.to}:${probe.port}: timed out, but nothing shows ${probe.to} is up`);
   }
@@ -74,5 +91,8 @@ if (import.meta.main) {
     console.log(`WARN ${probe.fromLabel} -> ${probe.toLabel} ${probe.to}:${probe.port}: refused, not dropped; check the host firewall`);
   }
   console.log(`${results.length} probes from ${values.from}: ${results.length - wrong.length - inconclusive.length} as expected, ${wrong.length} not, ${inconclusive.length} inconclusive.`);
-  if (wrong.length) process.exitCode = 1;
+  console.log(verdict === 'INCONCLUSIVE'
+    ? 'INCONCLUSIVE: no failures, but not proven. Bring the targets up, or run from a vantage point that can see them, and probe again.'
+    : verdict);
+  process.exitCode = EXIT_CODE[verdict];
 }

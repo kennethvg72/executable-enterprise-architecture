@@ -8,6 +8,7 @@ import type { Model } from '../../enterprise-architecture/tools/lib/model.ts';
 import { compilePolicy, isAllowed } from './policy.ts';
 import { probePlan, renderHostRuleset } from './render.ts';
 import { checkInvariants } from './verify.ts';
+import { classify } from './probe.ts';
 
 const failures = (model: Model) => checkInvariants(model, compilePolicy(model)).filter((r) => r.status === 'fail');
 const withLandscape = (change: (l: ReturnType<typeof loadLandscape>) => void) => {
@@ -118,4 +119,20 @@ test('the probe plan covers thousands of paths, both allowed and blocked', () =>
   assert.equal(toReplica?.expect, 'blocked');
   const toEndpoint = probes.find((p) => p.from === '10.1.20.31' && p.to === '10.1.50.10' && p.port === 5432);
   assert.equal(toEndpoint?.expect, 'open');
+});
+
+test('a probe run passes only with proof: timeouts to a target nobody reached are inconclusive', () => {
+  const probe = (to: string, expect: 'open' | 'blocked') => ({ from: '10.1.20.31', fromLabel: 'a', to, toLabel: 'b', port: 5432, expect }) as Parameters<typeof classify>[0][number]['probe'];
+  // Every blocked probe timed out, and nothing shows the targets were up: not a pass.
+  assert.equal(classify([{ probe: probe('10.1.50.10', 'blocked'), outcome: 'timeout' }]).verdict, 'INCONCLUSIVE');
+  // The same timeout, with a positive control that reached the same host: proven.
+  assert.equal(classify([
+    { probe: probe('10.1.50.10', 'blocked'), outcome: 'timeout' },
+    { probe: { ...probe('10.1.50.10', 'open'), port: 443 }, outcome: 'open' },
+  ]).verdict, 'PASS');
+  // A failure outranks everything else.
+  assert.equal(classify([
+    { probe: probe('10.1.50.10', 'blocked'), outcome: 'timeout' },
+    { probe: probe('10.1.50.11', 'open'), outcome: 'timeout' },
+  ]).verdict, 'FAIL');
 });

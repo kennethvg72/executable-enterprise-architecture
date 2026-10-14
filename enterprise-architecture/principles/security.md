@@ -55,13 +55,24 @@ Related: [identity and access](identity-and-access.md), [data](data.md), and the
 **Verified by.** `review`.
 
 ### SEC-11: Contain the tools, including the AI ones
-**Rule.** Build tools, test tools and AI agents in development environments run with write access limited to the workspace they are working in, and no access to credentials beyond what the task needs. Agents run commands inside a sandbox where the platform supports it.
-
-The central pipeline is held to the same rule, more strictly. It runs code from release candidates (their tests, their build scripts) in disposable, unprivileged runners with no production credentials, restricted network egress, read-only access to the architecture and landscape, and a controlled way to export results. The candidate's code never runs where verdicts are written or where deployment credentials live.
-**Why.** Dependencies and agents execute code. A malicious package or a manipulated agent must not be able to reach the developer's credentials or files outside the project, and a malicious release candidate must not be able to approve itself.
-**Verified by.** `review`: bootstrap procedures configure the sandbox and verify it works. `test`: the pipeline's runner configuration is checked like any other infrastructure.
+**Rule.** Build tools, test tools and AI agents in development environments run with write access limited to the workspace they are working in, and no access to credentials beyond what the task needs. Agents run commands inside a sandbox where the platform supports it. The central pipeline is held to a stricter rule of its own ([SEC-13](#sec-13-the-pipeline-treats-every-release-candidate-as-hostile)).
+**Why.** Dependencies and agents execute code. A malicious package or a manipulated agent must not be able to reach the developer's credentials or files outside the project.
+**Verified by.** `review`: bootstrap procedures configure the sandbox and verify it works, by attempting a write outside the workspace.
 
 ### SEC-12: Security is tested by someone who didn't build it
 **Rule.** Before production, the central [Security Agent](../agents/security-agent.md) attacks every release candidate whose impact requires it ([change-impact.md](../pipeline/change-impact.md#the-security-agent)), in acceptance, using attack playbooks written by NATAX's security specialists for each platform. It also attacks the landscape whenever threats change, and at least monthly. Its findings are judged like any other security finding ([SEC-08](#sec-08-security-findings-have-deadlines-not-opinions)).
 **Why.** The Test Agent tries to break what its team built, in the team's environment, with the team's idea of what could go wrong. An attacker has none of those limits. And threats change when applications don't: a weakness found in one application today may be in ten others that haven't changed for a year.
 **Verified by.** `test`: the pipeline requires the Security Agent's report in the candidate's evidence when the impact requires it; the finding tracker shows each sweep's date. `review`: the security specialists review the playbooks with each platform version.
+
+### SEC-13: The pipeline treats every release candidate as hostile
+**Rule.** Everything a release candidate brings is untrusted code: its tests, its build scripts, its dependencies, and every tool resolved from them (`npm test` runs the candidate's scripts; `npx tsc` runs the `tsc` the candidate's lockfile installed; `gradlew` is the candidate's own script). The pipeline runs that code only in a **disposable runner**:
+
+- created for one candidate, and destroyed afterwards; nothing carries over to the next run;
+- no credentials except a one-time test database created for this run; never production credentials, deployment credentials, or the pipeline's own identity;
+- no network, except the approved package mirror and the run's test database;
+- the candidate's workspace is the only writable place; the architecture and landscape are read-only;
+- results leave the runner only as data (test output, reports), which the pipeline treats as data ([AGT-09](ai-agents.md#agt-09-content-is-data-not-instructions)).
+
+The pipeline installs dependencies itself, from the lockfile, with install scripts off, and uses its own build tools where the platform allows (its own Gradle distribution, not the candidate's wrapper). Verdicts are written, and deployments made, outside the runner.
+**Why.** The pipeline is the most valuable target in the landscape: whatever controls it controls production. A candidate whose tests read the runner's credentials, or leave something behind for the next candidate, could approve itself or poison others. An instruction telling an agent not to run malicious code doesn't stop malicious code. Only the runner's boundaries do, and boundaries that are never tested are assumptions.
+**Verified by.** `test`: a **hostile canary**, a release candidate whose tests try to escape ([fixtures/hostile-candidate](../tools/fixtures/hostile-candidate/README.md)), runs in the runner on every change to the runner's configuration, and weekly. Every attempt must fail. The canary records only whether an attempt succeeded, never what it found. The [Security Agent](../agents/security-agent.md)'s sweeps attack the pipeline itself. In the deterministic stage, the platform's checks run only with `--isolated` ([pipeline.ts](../tools/pipeline.ts)); without it they are skipped, and the stage is incomplete.

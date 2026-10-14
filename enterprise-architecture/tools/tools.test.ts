@@ -11,6 +11,7 @@ import { checkDependencies, sectionMentions } from './check-dependencies.ts';
 import { REPO_ROOT, clone, loadManifest } from './lib/load.ts';
 import { scanSecrets } from './scan-secrets.ts';
 import { validateManifest } from './validate-manifest.ts';
+import { runPipeline } from './pipeline.ts';
 
 const APP = join(REPO_ROOT, 'enterprise-architecture', 'tools', 'fixtures', 'registered-app');
 const failures = (results: { status: string; rule: string }[]) => results.filter((r) => r.status === 'fail').map((r) => r.rule);
@@ -175,4 +176,17 @@ test('anchors follow the rule heading convention', () => {
 
 test('every relative link and anchor in the repository resolves', () => {
   assert.deepEqual(checkLinks().filter((r) => r.status === 'fail').map((r) => r.message), []);
+});
+
+test('the pipeline never runs candidate code outside an isolated runner, and says it is incomplete (SEC-13)', () => {
+  const { sections, status } = runPipeline(APP, { today: new Date('2026-10-14') });
+  const app = sections.find(([title]) => title.startsWith('Application'))![1];
+  assert.equal(status, 'INCOMPLETE');
+  assert.ok(app.length > 0 && app.every((r) => r.status === 'skip' && r.rule === 'SEC-13'));
+});
+
+test('a mandatory check that can\'t run makes the stage incomplete, not a pass', () => {
+  // With --isolated, but no installed dependencies or tools here: the fixture has no lockfile to install from.
+  const { status } = runPipeline(APP, { today: new Date('2026-10-14'), isolated: true });
+  assert.notEqual(status, 'PASS');
 });

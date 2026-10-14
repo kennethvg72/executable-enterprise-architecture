@@ -4,7 +4,7 @@ These are the checks the pipeline runs for each affected domain ([change-impact.
 
 - **Deterministic** checks give the same answer every time and need no AI. They take into account the Board's exceptions ([exceptions.yaml](../governance/exceptions.yaml)) for the application. A failure that remains after that can't be overridden by anyone, the Governance Agent included.
 - **Review** checks are judged by the Governance Agent against the cited rules.
-- The **Here** column shows what this proof of concept implements. ✅ means implemented in this repository's tools; 📄 means the check is described, and a real pipeline would implement it with the named kind of tool. A check that didn't run is reported as skipped, never as passed.
+- The **Here** column shows what this proof of concept implements. ✅ means implemented in this repository's tools; 📄 means the check is described, and a real pipeline would implement it with the named kind of tool. A check that didn't run is reported as skipped, never as passed, and a skipped mandatory check makes the stage **incomplete**, which blocks a verdict like a failure ([pipeline README](README.md#running-the-pipeline-here)).
 
 ## Always
 
@@ -35,6 +35,7 @@ Evaluated at intake for every candidate, whatever the change. Each can restrict 
 | Dependencies have a recorded reason and are pinned | SIM-01, SIM-05, SEC-05 | Deterministic | ✅ `enterprise-architecture/tools/check-dependencies.ts` |
 | Dependencies have no known reachable critical vulnerabilities | SEC-05, SEC-08 | Deterministic | 📄 vulnerability scanner against a mirror of advisories |
 | Evidence is authentic: signed "Release", signed reviews | AGT-01, AGT-06 | Deterministic | 📄 signature verification; simulated here |
+| The candidate's code runs only in a disposable runner, whose isolation the hostile canary has verified since the runner last changed | SEC-13 | Deterministic | ✅ `pipeline.ts` runs candidate code only with `--isolated`; ✅ the canary and `verify-runner.ts`; 📄 the runner itself |
 | Open local findings are listed in the candidate | AGT-02 | Deterministic + review | 📄 parse review files; the Governance Agent compares them by hand here |
 
 ## application

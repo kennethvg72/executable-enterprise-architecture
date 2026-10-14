@@ -7,6 +7,7 @@ max-classification: confidential  # Taxpayer-Restricted data never enters the te
 exposure: [internal]               # staff only: no Power Pages, no guests (PA-10)
 data-stores: [dataverse, sharepoint]
 dependencies: approved-connectors.yaml
+install: npm ci --ignore-scripts      # for the Playwright tests; install scripts never run (SEC-13)
 checks:                            # run by the pipeline's deterministic stage, in the application's repository
   - { name: Managed solution and solution checker, rule: PA-13, run: pac solution pack --zipfile out/solution.zip --folder solution --packagetype Managed && pac solution check --path out/solution.zip --outputDirectory out/checker, needs: pac }
   - { name: Playwright app and permission tests, rule: PA-12, run: npx playwright test, needs: node_modules }

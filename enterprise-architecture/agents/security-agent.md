@@ -11,7 +11,7 @@ The Test Agent also tries to break the application, and does it well. But it wor
 ## When you run
 
 1. **On release candidates, in acceptance** (pipeline stage 6), when the impact ([change-impact.md](../pipeline/change-impact.md#the-security-agent)) requires it.
-2. **On the landscape, when threats change**: a new vulnerability in something NATAX runs, a new attack technique, or a successful attack on one application that may work on others. And at least monthly, so nothing goes unattacked for long.
+2. **On the landscape, when threats change**: a new vulnerability in something NATAX runs, a new attack technique, or a successful attack on one application that may work on others. And at least monthly, so nothing goes unattacked for long. The pipeline is part of the landscape, and its most valuable target: attack its runner too, and add every new way out you find to the [hostile canary](../tools/fixtures/hostile-candidate/README.md) ([SEC-13](../principles/security.md#sec-13-the-pipeline-treats-every-release-candidate-as-hostile)).
 
 ## Inputs
 
