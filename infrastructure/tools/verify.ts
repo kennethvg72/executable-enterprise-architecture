@@ -8,6 +8,7 @@ import { appArgs, loadModel, withApplications } from '../../enterprise-architect
 import type { Model } from '../../enterprise-architecture/tools/lib/model.ts';
 import { fail, pass, report, warn, type Result } from '../../enterprise-architecture/tools/lib/report.ts';
 import { GENERATED, renderAll, renderEdgeSpec, renderHaproxy } from './render.ts';
+import { checkGeneratedConfig } from './check-output.ts';
 import { simulate } from './simulate.ts';
 import { connected, topology } from './topology.ts';
 
@@ -177,6 +178,13 @@ export function checkDrift(model: Model, dir = GENERATED): Result[] {
     : pass('DEL-04', 'Generated configuration matches the declared intent.')];
 }
 
+/** The generated files as deployed (from the repository), or as this model would produce them. */
+function generatedFiles(model: Model, fromDisk: boolean): Map<string, string> {
+  const rendered = renderAll(model);
+  if (!fromDisk) return rendered;
+  return new Map([...rendered.keys()].filter((path) => existsSync(join(GENERATED, path))).map((path) => [path, readFileSync(join(GENERATED, path), 'utf8')]));
+}
+
 export function verifyInfrastructure(model = loadModel(), { drift = true } = {}): Result[] {
   return [
     ...checkLoadBalancers(model),
@@ -184,6 +192,8 @@ export function verifyInfrastructure(model = loadModel(), { drift = true } = {})
     ...checkPlacement(model),
     ...checkCapacity(model),
     ...checkTopology(model),
+    // DEL-06: the configuration itself, read back, not the intent it was rendered from.
+    ...checkGeneratedConfig(model, generatedFiles(model, drift)),
     ...(drift ? checkDrift(model) : []),
   ];
 }

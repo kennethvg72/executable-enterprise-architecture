@@ -34,7 +34,7 @@ Evaluated at intake for every candidate, whatever the change. Each can restrict 
 | The application's tests pass, rerun by the pipeline | DEL-02 | Deterministic | ✅ runs the application's `npm test` |
 | Dependencies have a recorded reason and are pinned | SIM-01, SIM-05, SEC-05 | Deterministic | ✅ `enterprise-architecture/tools/check-dependencies.ts` |
 | Dependencies have no known reachable critical vulnerabilities | SEC-05, SEC-08 | Deterministic | 📄 vulnerability scanner against a mirror of advisories |
-| Evidence is authentic: signed "Release", signed reviews | AGT-01, AGT-06 | Deterministic | 📄 signature verification; simulated here |
+| The Problem Owner's "Release" is authentic: a tag signed with their workforce identity, or approval in the pipeline | AGT-06 | Deterministic | 📄 signature verification; simulated here |
 | The candidate's code runs only in a disposable runner, whose isolation the hostile canary has verified since the runner last changed | SEC-13 | Deterministic | ✅ `pipeline.ts` runs candidate code only with `--isolated`; ✅ the canary and `verify-runner.ts`; 📄 the runner itself |
 | Open local findings are listed in the candidate | AGT-02 | Deterministic + review | 📄 parse review files; the Governance Agent compares them by hand here |
 

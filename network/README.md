@@ -24,7 +24,8 @@ Network specialists work on this architecture itself, with agents ([BOOTSTRAP.md
                     │            generated/flows.md                  (every allowed flow, and why)
                     │            generated/probes.json               (thousands of probes, with expected outcomes)
                     ▼
- tools/verify.ts ── invariants (rules for any landscape) + expectations.yaml (the Test Agent's) + drift
+ tools/verify.ts ── invariants (rules for any landscape) + expectations.yaml (the Test Agent's) + drift,
+                    then the generated rules read back (tools/nft.ts): every probe and expectation again
                     │
                     ▼
  tools/probe.ts ─── runs the probes from each vantage point in a lab, test, acceptance or production

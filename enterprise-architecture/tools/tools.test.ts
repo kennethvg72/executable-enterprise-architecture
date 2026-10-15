@@ -8,7 +8,9 @@ import { join } from 'node:path';
 import { anchor, checkLinks } from './check-links.ts';
 import { stringify } from 'yaml';
 import { checkDependencies, sectionMentions } from './check-dependencies.ts';
-import { REPO_ROOT, clone, loadManifest } from './lib/load.ts';
+import { REPO_ROOT, clone, intentChanges, loadManifest, loadModel, withApplications } from './lib/load.ts';
+import { verifyNetwork } from '../../network/tools/verify.ts';
+import { verifyInfrastructure } from '../../infrastructure/tools/verify.ts';
 import { scanSecrets } from './scan-secrets.ts';
 import { validateManifest } from './validate-manifest.ts';
 import { runPipeline } from './pipeline.ts';
@@ -176,6 +178,41 @@ test('anchors follow the rule heading convention', () => {
 
 test('every relative link and anchor in the repository resolves', () => {
   assert.deepEqual(checkLinks().filter((r) => r.status === 'fail').map((r) => r.message), []);
+});
+
+test('a change to a registered application is checked exactly like a new application', () => {
+  // A candidate for rejection-triage that reaches into payments and the taxpayer database, faces the
+  // internet, drops a resilience class and claims 4,000 vCPU. Under its real name it must fail the
+  // same checks as under a name the landscape has never seen.
+  const failuresFor = (name: string) => {
+    const dir = mkdtempSync(join(tmpdir(), 'changed-'));
+    const m = clone(loadManifest(APP));
+    m.application = name;
+    m.exposure = 'internet';
+    m.resilience.class = 'C';
+    m.runtime['peak-vcpu'] = 4000;
+    m.consumes = [...(m.consumes ?? []),
+      { service: 'payments', interface: 'api', purpose: 'Refund status.' },
+      { service: 'core-db', interface: 'postgres', database: 'returns', purpose: 'Return details.' }];
+    writeFileSync(join(dir, 'architecture.yaml'), stringify(m));
+    const rules = [...verifyNetwork(withApplications(loadModel(), [dir]), { drift: false }), ...verifyInfrastructure(withApplications(loadModel(), [dir]), { drift: false })]
+      .filter((r) => r.status === 'fail').map((r) => r.rule);
+    return [...new Set(rules)].sort();
+  };
+  const registered = failuresFor('rejection-triage');
+  assert.ok(registered.length >= 2, `only ${registered.join(', ')}`);
+  assert.deepEqual(registered, failuresFor('rejection-triage-copy'));
+});
+
+test('the pipeline lists what a candidate changes against production', () => {
+  const production = loadModel().services.get('rejection-triage')!;
+  const changed = clone(production);
+  changed.class = 'C';
+  changed.consumes = [...(changed.consumes ?? []), { service: 'payments', interface: 'api', purpose: 'x' }];
+  const changes = intentChanges(production, changed);
+  assert.ok(changes.some((c) => c.includes('class B -> C')));
+  assert.ok(changes.some((c) => c.includes('payments')));
+  assert.deepEqual(intentChanges(production, production), []);
 });
 
 test('the pipeline never runs candidate code outside an isolated runner, and says it is incomplete (SEC-13)', () => {

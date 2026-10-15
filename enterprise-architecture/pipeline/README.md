@@ -66,7 +66,7 @@ Not everything runs on every change. These run on a schedule, across the whole l
 | Development Agent | Prepare a release candidate and read verdicts. |
 | Security Agent | Attack candidates in acceptance with test identities; read production configuration, inventories and observed flows; write findings. It cannot change anything, approve, or deploy. |
 | Governance Agent | Read candidates, the architecture and the landscape; run checks; write verdicts. It cannot deploy. |
-| Deployment process | Deploy candidates that have an approved verdict, by digest. It is the only identity with production write access. It cannot approve. |
+| Deployment process | Deploy candidates that have an approved verdict in the pipeline's verdict store, by digest. It is the only identity with production write access. It cannot approve. |
 | Architecture Board | Change the architecture, and with it what the Governance Agent may approve. Grant exceptions. It doesn't approve individual candidates. |
 | Central IT | Operate the pipeline itself. Changes to the pipeline go through a pipeline: the same rules, a separate instance. |
 
@@ -107,5 +107,5 @@ node enterprise-architecture/tools/verify-runner.ts    # inside the runner: ever
 Run on a laptop, the canary shows what a release candidate could do there: read its credentials, write outside the workspace, reach the internet. That's why `--isolated` exists. In this proof of concept there is no runner, so a Governance Agent session runs the application's checks only inside its own verified sandbox (BOOTSTRAP, step 4), and says so in its verdict.
 
 In this proof of concept, some things are simulated:
-- Evidence provenance (signed reviews, the Problem Owner's signed "Release") is replaced by files in the repository. The Governance Agent says so in its verdict.
+- The Problem Owner's signed "Release" is replaced by a file in the repository, and the verdict store by the verdict file next to the candidate. The Governance Agent says so in its verdict.
 - Test, acceptance and production deployment (stages 5, 6 and 8) are described, not executed. There is no NATAX to deploy to.

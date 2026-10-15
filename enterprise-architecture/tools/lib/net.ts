@@ -19,6 +19,14 @@ export function within(address: string, cidr: string): boolean {
   return ((ipToInt(addr!) & mask) >>> 0) === ((ipToInt(net!) & mask) >>> 0);
 }
 
+/** NATAX's own address space. "The internet" (0.0.0.0/0) never includes it. */
+export const NATAX_SPACE = '10.0.0.0/8';
+
+/** True if `address` is one of a flow's peers: like within(), except that the internet excludes NATAX. */
+export function isPeer(address: string, peer: string): boolean {
+  return peer === '0.0.0.0/0' ? !within(address, NATAX_SPACE) : within(address, peer);
+}
+
 /** The site whose prefix contains the address, if any. */
 export function siteOf(address: string, sites: Record<string, { prefix: string }>): string | undefined {
   return Object.entries(sites).find(([, s]) => within(address, s.prefix))?.[0];

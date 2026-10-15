@@ -62,12 +62,12 @@ The candidate collects evidence; it doesn't prove it. The pipeline checks where 
 | Evidence | Authentic when |
 |---|---|
 | The Problem Owner's "Release" | The release tag is signed with the Problem Owner's workforce identity, or they approved the submission in the pipeline after signing in. |
-| Test and Local Governance reviews | The review commits are signed with the key of the role's own session ([AGT-01](../principles/ai-agents.md#agt-01-separate-agents-for-separate-duties)). |
+| Test and Local Governance reviews | They come from the Problem Owner's environment, under the Problem Owner's accountability, and they're not proof: the Governance Agent reads the diff itself, and the Security Agent attacks the result ([AGT-01](../principles/ai-agents.md#agt-01-separate-agents-for-separate-duties)). |
 | Test results | The pipeline reruns the tests itself. The candidate's `test-results.txt` is only for reference. |
 | Exceptions | They are in the Board's registry ([exceptions.yaml](../governance/exceptions.yaml)), never in the application's repository. |
 
-In this proof of concept, evidence is files in the repository, and nothing is signed. A real pipeline must not accept that.
+In this proof of concept, evidence is files in the repository, and the "Release" isn't signed. A real pipeline must not accept that.
 
 ## After the verdict
 
-The pipeline writes `verdict.md` next to `candidate.yaml` (format: [verdict.md](verdict.md)). If the candidate is approved and deployed, the deployment process appends `deployment.md` with what was deployed where and when, and the verification results.
+The pipeline records the verdict in its own verdict store, and copies it next to `candidate.yaml` for the team (format: [verdict.md](verdict.md)). Only the record in the store is the decision. If the candidate is approved and deployed, the deployment process appends `deployment.md` with what was deployed where and when, and the verification results.

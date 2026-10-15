@@ -1,5 +1,7 @@
 // Verifies the compiled network policy: invariants that must hold for every landscape,
 // explicit expectations written by the Test Agent, and that the generated files are current.
+// Then verifies the generated rules themselves (DEL-06): read back as text, without the policy
+// they came from, they must do what the intent says.
 // Usage: node network/tools/verify.ts
 
 import { existsSync, readFileSync } from 'node:fs';
@@ -10,7 +12,8 @@ import { siteOf, within } from '../../enterprise-architecture/tools/lib/net.ts';
 import { fail, pass, report, warn, type Result } from '../../enterprise-architecture/tools/lib/report.ts';
 import { GENERATED, renderAll } from './compile.ts';
 import { compilePolicy, isAllowed, type Policy } from './policy.ts';
-import { transitFlows } from './render.ts';
+import { parseRuleset, rulesAllow, type HostRules } from './nft.ts';
+import { probePlan, transitFlows } from './render.ts';
 
 export interface Expectation {
   name: string;
@@ -140,10 +143,64 @@ export function checkDrift(model: Model, policy: Policy, dir = GENERATED): Resul
     : pass('DEL-04', 'Generated configuration matches the declared intent.')];
 }
 
+/**
+ * DEL-06: the generated host rulesets, read back as text, do what the intent says. Every probe in
+ * the probe plan and every expectation is evaluated against the rules themselves, not the policy.
+ */
+export function checkGeneratedRules(model: Model, policy: Policy, files: Map<string, string>, expectations: Expectation[]): Result[] {
+  const results: Result[] = [];
+  const hosts: HostRules = new Map();
+  const paw = model.landscape.zones['paw']?.cidrs ?? [];
+  for (const s of model.services.values()) {
+    const text = files.get(`nftables/${s.id}.nft`);
+    if (text === undefined) continue;
+    let chains;
+    try { chains = parseRuleset(text); } catch (e) {
+      results.push(fail('DEL-06', `nftables/${s.id}.nft can't be read back: ${(e as Error).message}`, 'Fix the renderer: a ruleset nobody can verify is never assumed correct.'));
+      continue;
+    }
+    for (const hook of ['input', 'output']) {
+      const chain = chains.get(hook);
+      if (!chain || chain.policy !== 'drop') results.push(fail('ZTN-03', `nftables/${s.id}.nft: the ${hook} chain is ${chain ? 'not default deny' : 'missing'}.`, 'Every host denies by default, inbound and outbound.'));
+    }
+    const ssh = (chains.get('input')?.rules ?? []).filter((r) => r.verdict === 'accept' && r.protocol !== 'other' && (!r.ports || r.ports.includes(22)));
+    const loose = ssh.filter((r) => !r.saddr || r.saddr.negate || !r.saddr.cidrs.every((c) => paw.some((z) => within(c.split('/')[0]!, z))));
+    if (loose.length) results.push(fail('IAM-06', `nftables/${s.id}.nft accepts port 22 from more than PAWs: ${loose[0]!.line}`, 'Only privileged access workstations reach port 22.'));
+    for (const i of [...s.instances, ...(s.vips ?? []), ...(s.egress ?? [])]) hosts.set(i.address, chains);
+  }
+  // A path between two hosts without generated rules (zones, the edge appliances) is enforced
+  // elsewhere; the host rules can't decide it, so it isn't counted either way.
+  const probes = probePlan(model, policy).filter((pr) => hosts.has(pr.from) || hosts.has(pr.to));
+  const wrong = probes.filter((pr) => rulesAllow(hosts, pr.from, pr.to, pr.port) !== (pr.expect === 'open'));
+  results.push(wrong.length
+    ? fail('DEL-06', `The generated rules disagree with the intent on ${wrong.length} of ${probes.length} paths, for example ${wrong.slice(0, 3).map((w) => `${w.fromLabel} -> ${w.toLabel} ${w.to}:${w.port} (intent: ${w.expect})`).join('; ')}.`, 'Fix the renderer, then regenerate.')
+    : pass('DEL-06', `The generated rules, read back, agree with the intent on all ${probes.length} paths in the probe plan that host rules decide.`));
+  const broken = expectations.filter((e) => {
+    const pairs = resolveRef(model, e.from, 'from').flatMap((f) => resolveRef(model, e.to, 'to').map((t) => rulesAllow(hosts, f, t, e.port)));
+    return pairs.length === 0 || (e.expect === 'allow' ? pairs.some((ok) => !ok) : pairs.some((ok) => ok));
+  });
+  results.push(broken.length
+    ? fail('DEL-06', `On the generated rules, ${broken.length} expectations don't hold: ${broken.slice(0, 3).map((e) => e.name).join('; ')}.`, 'Fix the renderer, then regenerate.')
+    : pass('DEL-06', `All ${expectations.length} expectations hold on the generated rules too.`));
+  return results;
+}
+
+/** The generated files as deployed (from the repository), or as this model would produce them. */
+function generatedFiles(model: Model, policy: Policy, fromDisk: boolean): Map<string, string> {
+  const rendered = renderAll(model, policy);
+  if (!fromDisk) return rendered;
+  return new Map([...rendered.keys()].filter((path) => existsSync(join(GENERATED, path))).map((path) => [path, readFileSync(join(GENERATED, path), 'utf8')]));
+}
+
 export function verifyNetwork(model = loadModel(), { drift = true } = {}): Result[] {
   const policy = compilePolicy(model);
   const expectations = readYaml<Expectation[]>(join(REPO_ROOT, 'network', 'expectations.yaml'));
-  return [...checkInvariants(model, policy), ...checkExpectations(model, policy, expectations), ...(drift ? checkDrift(model, policy) : [])];
+  return [
+    ...checkInvariants(model, policy),
+    ...checkExpectations(model, policy, expectations),
+    ...checkGeneratedRules(model, policy, generatedFiles(model, policy, drift), expectations),
+    ...(drift ? checkDrift(model, policy) : []),
+  ];
 }
 
 if (import.meta.main) {

@@ -11,7 +11,7 @@
 import { readFileSync } from 'node:fs';
 import { loadModel } from '../../enterprise-architecture/tools/lib/load.ts';
 import type { Model } from '../../enterprise-architecture/tools/lib/model.ts';
-import { within } from '../../enterprise-architecture/tools/lib/net.ts';
+import { within, NATAX_SPACE } from '../../enterprise-architecture/tools/lib/net.ts';
 import { compilePolicy, isAllowed, type Policy } from './policy.ts';
 
 export interface Observed { source: string; destination: string; port: number; connections: number }
@@ -39,7 +39,7 @@ export function identify(model: Model, address: string): string | undefined {
   for (const [id, z] of Object.entries(model.landscape.zones)) {
     if (id !== 'internet' && z.cidrs.some((c) => within(address, c))) return `zone:${id}`;
   }
-  const internal = Object.values(model.landscape.sites).some((s) => within(address, s.prefix)) || within(address, '10.0.0.0/8');
+  const internal = Object.values(model.landscape.sites).some((s) => within(address, s.prefix)) || within(address, NATAX_SPACE);
   return internal ? undefined : 'zone:internet';
 }
 

@@ -3,11 +3,13 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { clone, loadLandscape, loadModel } from '../../enterprise-architecture/tools/lib/load.ts';
+import { join } from 'node:path';
+import { REPO_ROOT, clone, loadLandscape, loadModel, readYaml } from '../../enterprise-architecture/tools/lib/load.ts';
 import type { Model } from '../../enterprise-architecture/tools/lib/model.ts';
 import { compilePolicy, isAllowed } from './policy.ts';
 import { probePlan, renderHostRuleset } from './render.ts';
-import { checkInvariants } from './verify.ts';
+import { checkGeneratedRules, checkInvariants, type Expectation } from './verify.ts';
+import { renderAll } from './compile.ts';
 import { classify } from './probe.ts';
 
 const failures = (model: Model) => checkInvariants(model, compilePolicy(model)).filter((r) => r.status === 'fail');
@@ -135,4 +137,38 @@ test('a probe run passes only with proof: timeouts to a target nobody reached ar
     { probe: probe('10.1.50.10', 'blocked'), outcome: 'timeout' },
     { probe: probe('10.1.50.11', 'open'), outcome: 'timeout' },
   ]).verdict, 'FAIL');
+});
+
+test('the generated rules are verified as written, so a renderer bug is caught (DEL-06)', () => {
+  const model = loadModel();
+  const policy = compilePolicy(model);
+  const rendered = renderAll(model, policy);
+  const expectations = readYaml<Expectation[]>(join(REPO_ROOT, 'network', 'expectations.yaml'));
+  const fails = (files: Map<string, string>) => checkGeneratedRules(model, policy, files, expectations).filter((r) => r.status === 'fail').map((r) => r.rule);
+  assert.deepEqual(fails(rendered), []);
+  const insert = (rule: string) => (t: string) => t.replace('    limit rate 10/second log prefix "natax-drop-in "', `    ${rule}\n    limit rate 10/second log prefix "natax-drop-in "`);
+  const mutations: [string, string, (text: string) => string, string][] = [
+    ['nftables/rejection-triage.nft', 'a declared path dropped', (t) => t.replace(/[^\n]*"Stores triage state\."\n/, ''), 'DEL-06'],
+    ['nftables/app-db.nft', 'the database open to all of NATAX', insert('ip saddr 10.0.0.0/8 tcp dport 5432 accept'), 'DEL-06'],
+    ['nftables/payments.nft', 'default allow', (t) => t.replace('hook input priority filter; policy drop;', 'hook input priority filter; policy accept;'), 'ZTN-03'],
+    ['nftables/calc-engine.nft', 'SSH from anywhere', insert('tcp dport 22 accept'), 'IAM-06'],
+    ['nftables/returns-service.nft', 'a statement nobody can verify', insert('meta l4proto tcp accept'), 'DEL-06'],
+  ];
+  for (const [file, name, mutate, rule] of mutations) {
+    const files = new Map(rendered);
+    const before = files.get(file)!;
+    files.set(file, mutate(before));
+    assert.notEqual(files.get(file), before, `the mutation "${name}" didn't apply`);
+    assert.ok(fails(files).includes(rule), `not caught: ${name}`);
+  }
+});
+
+test('"the internet" in the intent never includes NATAX hosts', () => {
+  const model = loadModel();
+  const policy = compilePolicy(model);
+  // filing-web is published to the internet through the edge; rejection-triage isn't on the internet.
+  assert.equal(isAllowed(policy, '10.1.20.31', '10.1.10.10', 443), undefined);
+  assert.ok(isAllowed(policy, '198.51.100.10', '10.1.10.10', 443));
+  // The egress proxy reaches the internet, not NATAX's own load balancers.
+  assert.equal(isAllowed(policy, '10.1.50.30', '10.1.50.10', 443), undefined);
 });

@@ -1,6 +1,6 @@
 # Deployment
 
-The deployment process is the only identity with production write access. It deploys a candidate's artifact, identified by digest ([DEL-01](../principles/delivery.md#del-01-every-change-is-a-release-candidate-with-evidence)), to test and acceptance as part of the candidate's evaluation, and to production only once the candidate has an approved verdict.
+The deployment process is the only identity with production write access. It deploys a candidate's artifact, identified by digest ([DEL-01](../principles/delivery.md#del-01-every-change-is-a-release-candidate-with-evidence)), to test and acceptance as part of the candidate's evaluation, and to production only once the pipeline's verdict store holds an approved verdict for that digest ([verdict.md](verdict.md)). A verdict anywhere else, such as the copy in the application's repository, is never a reason to deploy.
 
 Most of this page describes services in DC1 and DC2. Power Apps and Android apps are delivered differently; see [per platform](#per-platform) below. The environments are the same idea everywhere: test and acceptance with synthetic data ([DAT-04](../principles/data.md#dat-04-non-production-environments-use-synthetic-data-only)), then production, and nothing reaches production by any other route.
 

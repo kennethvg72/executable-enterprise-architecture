@@ -7,6 +7,8 @@ import { join } from 'node:path';
 import { REPO_ROOT, clone, loadLandscape, loadModel, withApplications } from '../../enterprise-architecture/tools/lib/load.ts';
 const FIXTURE = join(REPO_ROOT, 'enterprise-architecture', 'tools', 'fixtures', 'registered-app');
 import type { Landscape, Model } from '../../enterprise-architecture/tools/lib/model.ts';
+import { checkGeneratedConfig } from './check-output.ts';
+import { renderAll } from './render.ts';
 import { simulate } from './simulate.ts';
 import { checkCapacity, checkDatabases, checkLoadBalancers, checkPlacement, checkTopology } from './verify.ts';
 
@@ -96,4 +98,27 @@ test('simulation: two failures at once stop writes, but never cause split brain'
   const o = simulate(loadLandscape(), { name: 'double', sitesDown: ['hq'], linksDown: [['dc1', 'dc2']] });
   assert.equal(o.verdict, 'outage');
   assert.equal(o.primary, null);
+});
+
+test('the generated configuration is verified as written, so a renderer bug is caught (DEL-06)', () => {
+  const model = loadModel();
+  const rendered = renderAll(model);
+  assert.deepEqual(checkGeneratedConfig(model, rendered).filter((r) => r.status === 'fail'), []);
+  // Each mutation is a renderer bug that the model-level checks and the drift check can't see.
+  const mutations: [string, string, (text: string) => string, string][] = [
+    ['patroni/core-db.yml', 'watchdog off', (t) => t.replace('mode: required', 'mode: off'), 'RES-05'],
+    ['patroni/app-db.yml', 'strict synchronous mode', (t) => t.replace('synchronous_mode_strict: false', 'synchronous_mode_strict: true'), 'RES-05'],
+    ['haproxy/platform-lb-dc1.cfg', 'health check removed', (t) => t.replace(/ {2}http-check send meth GET uri \/health\/ready[^\n]*\n/, ''), 'RES-06'],
+    ['haproxy/platform-lb-dc1.cfg', 'demoted primary keeps connections', (t) => t.replace('on-marked-down shutdown-sessions', ''), 'RES-06'],
+    ['haproxy/platform-lb-dc2.cfg', 'other datacenter active', (t) => t.replace(/( server dc1-1 [^\n]*) backup/, '$1'), 'RES-06'],
+    ['edge/health-checks.yaml', 'edge monitors the root page', (t) => t.replace('path: /health/ready', 'path: /'), 'RES-06'],
+    ['keepalived/platform-lb-10.1.50.11.conf', 'VIP stays when HAProxy dies', (t) => t.replace(/track_script \{[^}]*\}/, ''), 'RES-02'],
+  ];
+  for (const [file, name, mutate, rule] of mutations) {
+    const files = new Map(rendered);
+    const before = files.get(file)!;
+    files.set(file, mutate(before));
+    assert.notEqual(files.get(file), before, `the mutation "${name}" didn't apply`);
+    assert.ok(failed(checkGeneratedConfig(model, files), rule), `not caught: ${name}`);
+  }
 });

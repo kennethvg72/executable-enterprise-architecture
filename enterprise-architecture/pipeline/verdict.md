@@ -1,6 +1,6 @@
 # Verdict
 
-The Governance Agent writes a verdict for every release candidate, next to it: `releases/<id>/verdict.md`. A verdict is **approved** or **rejected**. There is no "approved with conditions".
+The Governance Agent records a verdict for every release candidate in the pipeline's own **verdict store**, keyed by the digest of the candidate's artifact. That record is the decision: the deployment process acts on nothing else. A copy goes into the application's repository, next to the candidate (`releases/<id>/verdict.md`), for the team to read; nothing reads the copy as a decision. A verdict is **approved** or **rejected**. There is no "approved with conditions".
 
 A rejection is not complete without a compliant path forward. If the Governance Agent can't describe one, the architecture may be the problem: it rejects and opens an [escalation](../governance/escalation.md) to the Architecture Board.
 

@@ -24,7 +24,8 @@ Infrastructure specialists work on this architecture itself, with agents ([BOOTS
                     │      generated/edge/health-checks.yaml                  (for the commercial appliances, incl. global DNS)
                     │      generated/failure-simulation.md                    (what happens when things fail)
                     ▼
- tools/verify.ts ── health checks, database settings, placement, capacity, quorum topology, drift
+ tools/verify.ts ── health checks, database settings, placement, capacity, quorum topology, drift,
+                    and the generated files themselves, read back (tools/check-output.ts)
  tools/simulate.ts ─ failure scenarios, computed from the topology
 ```
 
@@ -38,6 +39,10 @@ Infrastructure specialists work on this architecture itself, with agents ([BOOTS
 | The same fiber cut, with an out-of-band witness | **danger**: both datacenters still see the witness but not each other. Every quorum member reports healthy, so nothing fails over. Meanwhile the primary has silently lost its synchronous replica, and DC2 can't reach the primary. A second failure now loses data. |
 
 Same failure, same products, same configuration. The only difference is *how the witness is connected*. That's why [RES-04](../enterprise-architecture/principles/resilience.md#res-04-three-voting-sites-and-the-witness-is-in-band) exists, and why it's checked on every change.
+
+## Checking the output, not the intent
+
+A renderer and a verifier built on the same structures fail together: if the renderer wrote `watchdog: off`, a check of the declared intent would still pass. So [check-output.ts](tools/check-output.ts) reads the generated HAProxy, keepalived, Patroni and edge files back as text, and checks them against the standards and the intent, without the renderer's help. Its tests break the output on purpose (a watchdog turned off, a missing health check, a load balancer sending traffic to the other datacenter) and must catch every one ([DEL-06](../enterprise-architecture/principles/delivery.md#del-06-checks-verify-the-output-not-the-intent-that-produced-it)).
 
 ## Try it
 

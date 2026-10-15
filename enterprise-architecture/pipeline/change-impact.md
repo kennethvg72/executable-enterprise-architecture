@@ -4,6 +4,8 @@ Not every release needs every check. A small UI change shouldn't trigger thousan
 
 The Governance Agent determines impact from the **actual diff** between the candidate's commit and the commit currently in production. The impact used is the **union** of three things: the candidate's `declared-impact`, the domains the trigger table below selects, and the Governance Agent's own assessment. Any difference between them is recorded in the verdict. An undeclared impact is itself a finding: the Development Agent misjudged the change.
 
+For network and infrastructure, the pipeline also compares the candidate's `architecture.yaml` with the application's entry in the [landscape](../landscape/landscape.yaml), and lists every change: new or removed dependencies, interfaces, sites, capacity and resilience class. Everything the candidate asks for is checked, whether the application is new or already in production.
+
 ## Domains
 
 These are the domains a release is judged in. Each maps to the checks in [checks.md](checks.md).

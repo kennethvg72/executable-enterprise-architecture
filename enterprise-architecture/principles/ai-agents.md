@@ -5,7 +5,7 @@ At NATAX, AI agents design, build, test and govern solutions. They are effective
 ### AGT-01: Separate agents for separate duties
 **Rule.** Building, testing and governing are done by separate agents, each with its own instructions and goal: the Development Agent, the Test Agent, the Local Governance Agent, and centrally the Security Agent and the Governance Agent. One agent never performs another's role on its own work.
 **Why.** The same model with a different goal finds different problems. An agent asked to build wants to finish; an agent asked to break wants to find the flaw; an agent asked to decide must not also be the one attacking, or it judges its own work.
-**Verified by.** `test`: release candidates must include evidence from the Test Agent and the Local Governance Agent. Each role's session commits its own reviews, signed with that role's key; the pipeline rejects review files not signed by the matching role. A file the Development Agent wrote isn't evidence of someone else's review.
+**Verified by.** `test`: release candidates include the Test Agent's and the Local Governance Agent's reviews. `review`: those reviews are produced in the Problem Owner's environment, under the Problem Owner's accountability, and the pipeline doesn't treat them as proof of anything: the Governance Agent reads the diff itself, and the Security Agent attacks the result. Writing another role's review is circumventing policy, and is handled as such. The central agents' work is recorded by the pipeline itself.
 
 ### AGT-02: Neither the Problem Owner nor the Development Agent can overrule the Test or Governance Agents
 **Rule.** Findings from the Test Agent, the Local Governance Agent and the Security Agent are fixed, or listed in the release candidate as proposed accepted risks for the Governance Agent to judge ([findings, risks and exceptions](../governance/escalation.md#findings-risks-and-exceptions)). Neither the Problem Owner nor the Development Agent can dismiss them. The central Governance Agent's verdict is final for that release candidate. Disagreement goes to a human: architectural disagreement to the Architecture Board through [escalation](../governance/escalation.md), and disagreement about intent to the Problem Owner.
@@ -15,7 +15,7 @@ At NATAX, AI agents design, build, test and govern solutions. They are effective
 ### AGT-03: Use different models for independence
 **Rule.** The Test Agent, the Security Agent and the Governance Agent should run on a different model family from the Development Agent (for example, Development on Claude, Test and Governance on Codex, or the other way round).
 **Why.** Different models have different blind spots. Today's models are interchangeable enough to make this cheap.
-**Verified by.** `review`: the release candidate records which model produced each piece of evidence.
+**Verified by.** `review`: the release candidate records which model produced each local review, self-reported under the Problem Owner's accountability. The pipeline records the central agents' models itself.
 
 ### AGT-04: Agents read the architecture; they don't edit it
 **Rule.** Agents in development environments treat the Enterprise Architecture and the network, infrastructure and platform architectures as read-only, pinned to the versions in `architecture.yaml`. When a rule can't be met, the Development Agent escalates. It never reinterprets, edits or works around the rule.

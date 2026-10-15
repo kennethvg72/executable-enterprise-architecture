@@ -1,7 +1,7 @@
 import { readFileSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parse } from 'yaml';
-import type { Exception, Landscape, Manifest, Model, Service } from './model.ts';
+import type { Consume, Exception, Landscape, Manifest, Model, Provide, Service } from './model.ts';
 
 /** The repository root, two levels above enterprise-architecture/tools/lib. */
 export const REPO_ROOT = resolve(import.meta.dirname, '..', '..', '..');
@@ -94,9 +94,13 @@ export function serviceFromManifest(manifest: Manifest, instances: Service['inst
  * modified copy (tests do this to show what a bad change would do).
  */
 /**
- * An application that Central IT hasn't placed yet, with provisional addresses, so its
- * Development Agent can check network and infrastructure intent before its first release.
- * The addresses come from a range Central IT never allocates (10.<site>.20.240 and up).
+ * The model as it would be with these applications' manifests: what their release candidates
+ * ask for. The manifest always supplies the intent (class, consumes, provides, capacity, sites),
+ * also for an application that is already registered; the landscape supplies only the addresses
+ * Central IT assigned. A change to a registered application is checked exactly like a new one.
+ *
+ * Addresses for instances the landscape doesn't have yet are provisional, from a range Central
+ * IT never allocates (10.<site>.20.240 and up).
  */
 export function withApplications(model: Model, appDirs: string[]): Model {
   appDirs.forEach((dir, n) => {
@@ -104,15 +108,37 @@ export function withApplications(model: Model, appDirs: string[]): Model {
     // Only applications in NATAX's datacenters have hosts there. Power Apps reach NATAX through the
     // data gateway, Android apps through published APIs: those are in the landscape already.
     if (loadPlatform(manifest.runtime.technology)?.['runs-on'] !== 'datacenters') return;
-    model.manifests.set(manifest.application, { dir: resolve(dir), manifest });
-    if (model.services.has(manifest.application)) return; // registered: keep the landscape's entry
+    const registered = model.services.get(manifest.application);
+    const assigned = (site: string) => (registered?.instances ?? []).filter((i) => i.site === site).map((i) => i.address);
     const instances = manifest.runtime.sites.flatMap((site, s) => Array.from({ length: manifest.runtime['instances-per-site'] }, (_, i) => ({
-      site, address: `10.${site === 'dc2' ? 2 : site === 'dc1' ? 1 : 9 + s}.20.${240 + n * 4 + i}`,
+      site, address: assigned(site)[i] ?? `10.${site === 'dc2' ? 2 : site === 'dc1' ? 1 : 9 + s}.20.${240 + n * 4 + i}`,
     })));
     model.manifests.set(manifest.application, { dir: resolve(dir), manifest });
-    model.services.set(manifest.application, serviceFromManifest(manifest, instances, `${dir}/architecture.yaml (provisional placement)`));
+    model.services.set(manifest.application, {
+      ...registered,
+      ...serviceFromManifest(manifest, instances, `${dir}/architecture.yaml${registered ? '' : ' (provisional placement)'}`),
+    });
   });
   return model;
+}
+
+/** What a candidate changes against its registered entry: the impact, in plain words. */
+export function intentChanges(registered: Service, candidate: Service): string[] {
+  const changes: string[] = [];
+  if (registered.class !== candidate.class) changes.push(`resilience class ${registered.class} -> ${candidate.class}`);
+  if ((registered['peak-vcpu'] ?? 0) !== (candidate['peak-vcpu'] ?? 0)) changes.push(`peak vCPU ${registered['peak-vcpu'] ?? 0} -> ${candidate['peak-vcpu'] ?? 0}`);
+  const sites = (x: Service) => x.instances.map((i) => i.site).sort().join(', ');
+  if (sites(registered) !== sites(candidate)) changes.push(`instances [${sites(registered)}] -> [${sites(candidate)}]`);
+  const key = (c: Consume) => JSON.stringify(c, ['service', 'external', 'interface', 'database']);
+  const before = new Set((registered.consumes ?? []).map(key));
+  const after = new Set((candidate.consumes ?? []).map(key));
+  for (const c of after) if (!before.has(c)) changes.push(`new dependency ${c}`);
+  for (const c of before) if (!after.has(c)) changes.push(`removed dependency ${c}`);
+  const iface = (x: Provide) => JSON.stringify(x, ['name', 'port', 'via', 'frontend-port', 'consumers', 'health', 'path']);
+  const offered = new Set((registered.provides ?? []).map(iface));
+  for (const p of candidate.provides ?? []) if (!offered.has(iface(p))) changes.push(`new or changed interface ${p.name}: ${iface(p)}`);
+  for (const p of registered.provides ?? []) if (!(candidate.provides ?? []).some((q) => q.name === p.name)) changes.push(`removed interface ${p.name}`);
+  return changes;
 }
 
 /** `--app <dir>` arguments, for the command-line tools. */

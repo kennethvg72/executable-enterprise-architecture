@@ -3,7 +3,7 @@
 // BOTH sides declare it: the consumer in `consumes`, the provider in `provides.consumers`.
 
 import type { Consume, Model, Provide, Service } from '../../enterprise-architecture/tools/lib/model.ts';
-import { within } from '../../enterprise-architecture/tools/lib/net.ts';
+import { within, isPeer } from '../../enterprise-architecture/tools/lib/net.ts';
 
 export interface Endpoint {
   kind: 'service' | 'zone';
@@ -194,6 +194,6 @@ export function compilePolicy(model: Model): Policy {
 export function isAllowed(policy: Policy, src: string, dst: string, port: number): Flow | undefined {
   return policy.flows.find((f) =>
     f.port === port &&
-    f.from.addresses.some((a) => within(src, a)) &&
-    f.to.addresses.some((a) => within(dst, a)));
+    f.from.addresses.some((a) => isPeer(src, a)) &&
+    f.to.addresses.some((a) => isPeer(dst, a)));
 }
