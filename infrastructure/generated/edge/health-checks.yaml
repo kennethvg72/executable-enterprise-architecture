@@ -17,6 +17,7 @@ services:
       interval-seconds: 2
       down-after-failures: 3
       up-after-successes: 2
+    client-blocked-paths: [/health/]   # for the monitor only, never forwarded from clients (RES-08)
     global:                        # DNS-based global load balancing (RES-02)
       ttl-seconds: 30
       withdraw-site-after-seconds: 60
@@ -35,6 +36,7 @@ services:
       interval-seconds: 2
       down-after-failures: 3
       up-after-successes: 2
+    client-blocked-paths: [/health/]   # for the monitor only, never forwarded from clients (RES-08)
     global:                        # DNS-based global load balancing (RES-02)
       ttl-seconds: 30
       withdraw-site-after-seconds: 60
@@ -53,6 +55,7 @@ services:
       interval-seconds: 2
       down-after-failures: 3
       up-after-successes: 2
+    client-blocked-paths: [/health/]   # for the monitor only, never forwarded from clients (RES-08)
     global:                        # DNS-based global load balancing (RES-02)
       ttl-seconds: 30
       withdraw-site-after-seconds: 60

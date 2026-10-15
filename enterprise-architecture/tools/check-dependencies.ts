@@ -19,7 +19,7 @@ export function checkDependencies(appDir: string, root = REPO_ROOT): Result[] {
   const file = join(root, 'platforms', technology, platform.dependencies);
   if (!existsSync(file)) return [fail('SIM-05', `Platform ${technology} has no ${platform.dependencies}.`)];
 
-  if (technology === 'power-apps') return checkConnectors(manifest.runtime.connectors ?? [], readYaml<{ business: Named[]; blocked: Named[] }>(file));
+  if (technology === 'power-apps') return checkConnectors(manifest.runtime.connectors ?? [], readYaml<ConnectorPolicy>(file));
 
   const approved = new Map(readYaml<{ dependencies: Named[] }>(file).dependencies.map((d) => [d.name, d.reason]));
   const deps = technology === 'android' ? gradleDependencies(appDir) : npmDependencies(appDir);
@@ -32,7 +32,8 @@ export function checkDependencies(appDir: string, root = REPO_ROOT): Result[] {
 
   const results: Result[] = [];
   for (const [name, version] of Object.entries(deps)) {
-    if (version !== undefined && !/^\d+\.\d+\.\d+/.test(version)) {
+    // Exactly x.y.z, nothing before or after: "8.23.1 || *" is a range that allows anything.
+    if (version !== undefined && !/^\d+\.\d+\.\d+$/.test(version)) {
       results.push(fail('SEC-05', `${name} is not pinned to an exact version ("${version}").`, 'Pin it to an exact version.'));
     }
     if (approved.has(name)) {
@@ -69,16 +70,31 @@ export function gradleDependencies(appDir: string): Record<string, string | unde
   return out;
 }
 
-function checkConnectors(connectors: string[], policy: { business: Named[]; blocked: Named[] }): Result[] {
-  const business = policy.business.map((c) => c.name);
+interface ConnectorPolicy {
+  allowed: Named[];
+  'custom-connectors'?: { 'allowed-hosts'?: { pattern: string; reason: string }[] };
+  blocked: Named[];
+}
+
+/** A host pattern from the connector policy: "*.api.natax.example" matches one or more labels in front. */
+const hostMatches = (host: string, pattern: string) =>
+  pattern.startsWith('*.') ? host.endsWith(pattern.slice(1)) && host.length > pattern.length - 1 : host === pattern;
+
+function checkConnectors(connectors: string[], policy: ConnectorPolicy): Result[] {
+  const allowed = policy.allowed.map((c) => c.name);
   const blocked = policy.blocked.map((c) => c.name);
+  const hosts = policy['custom-connectors']?.['allowed-hosts'] ?? [];
   if (!connectors.length) return [pass('PA-08', 'No connectors declared.')];
   return connectors.map((c) => {
-    if (business.includes(c) || (c.startsWith('NATAX ') && business.some((b) => b.startsWith('NATAX custom connectors')))) {
-      return pass('PA-08', `${c}: an approved business connector.`);
+    if (allowed.includes(c)) return pass('PA-08', `${c}: an allowed connector.`);
+    const host = /^custom:(.+)$/.exec(c)?.[1];
+    if (host) {
+      return hosts.some((h) => hostMatches(host, h.pattern))
+        ? pass('PA-09', `${c}: a custom connector to a NATAX API.`)
+        : fail('PA-09', `${c}: custom connectors may only call NATAX APIs (${hosts.map((h) => h.pattern).join(', ')}).`, 'Call the NATAX API that owns the data, as the signed-in user (PA-09).');
     }
-    return fail('PA-08', blocked.some((b) => b.split(/,\s*/).includes(c)) ? `${c} is blocked by the DLP policy.` : `${c} is not an approved connector.`,
-      'Use an approved connector (platforms/power-apps/approved-connectors.yaml), or a NATAX custom connector through the data gateway. A new connector is a decision record and a change to that file, approved by Central IT.');
+    return fail('PA-08', blocked.some((x) => x.split(/,\s*/).includes(c)) ? `${c} is blocked by the connector policy.` : `${c} is not an allowed connector.`,
+      'Use an allowed connector (platforms/power-apps/approved-connectors.yaml), or a custom connector to a NATAX API ("custom:<host>"). A new connector is a decision record and a change to that file, approved by Central IT.');
   });
 }
 

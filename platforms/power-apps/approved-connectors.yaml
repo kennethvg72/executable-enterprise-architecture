@@ -1,11 +1,16 @@
-# Connector classification for the Power Platform's data loss prevention (DLP) policies (PA-08).
-# Central IT generates the tenant's DLP policies from this file, by connector ID, and checks them
-# daily for drift. An app's connectors (architecture.yaml: runtime.connectors) must be in
-# "business". DLP decides which connectors, not which destinations or records (PA-08).
+# Connector policy for Power Apps (PA-08). Central IT generates the tenant's policies from this
+# file, by connector ID, and checks them daily for drift (DEL-04):
+#
+# - On every Managed Environment, an advanced connector policy allows exactly the connectors under
+#   "allowed". Everything else is unavailable, including connectors Microsoft adds later and the
+#   Microsoft 365 connectors that classic DLP can't block.
+# - Alongside it, a classic DLP policy for what advanced connector policies don't cover yet:
+#   custom connectors, classified by host, and the HTTP connectors, blocked.
+#
+# An app's connectors (architecture.yaml: runtime.connectors) must all be allowed. A NATAX API is
+# declared as "custom:<host>", and its host must match custom-connectors.allowed-hosts (PA-09).
 
-default-group: blocked            # every connector not listed, including ones the platform adds later
-
-business:
+allowed:
   - name: Microsoft Dataverse
     id: shared_commondataserviceforapps
     reason: The app's own data (PA-03).
@@ -24,13 +29,17 @@ business:
   - name: Approvals
     id: shared_approvals
     reason: Standard approval flows.
-  - name: NATAX custom connectors
-    id: custom connectors published by Central IT, through the on-premises data gateway
-    reason: The only way to reach NATAX systems, through their published APIs, as the signed-in user (PA-09).
 
-blocked:                          # always blocked, whatever is requested
+custom-connectors:
+  allowed-hosts:
+    - pattern: "*.api.natax.example"
+      reason: NATAX APIs published to the power-platform zone, called as the signed-in user with OAuth (PA-09).
+  everything-else: blocked
+  gateway: never                    # custom connectors through the on-premises data gateway can't use OAuth (PA-09)
+
+blocked:                            # classic DLP, always blocked, whatever is requested
   - name: HTTP
-    reason: Arbitrary outbound calls would bypass the DLP policy, the network policy and PA-09.
+    reason: Arbitrary outbound calls would bypass the connector policy, the network policy and PA-09.
   - name: HTTP with Microsoft Entra ID
     reason: As HTTP.
   - name: HTTP Webhook

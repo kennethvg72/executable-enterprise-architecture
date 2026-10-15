@@ -15,6 +15,8 @@ export interface Config {
   /** The development sign-in. Only in development, only on localhost. */
   devSignIn: boolean;
   oidc?: { issuer: string; clientId: string; clientSecret: string; redirectUri: string };
+  /** Bearer tokens for staff APIs at the edge (staff-edge, AND-05): who issues them, and for which API. */
+  api?: { issuer: string; audience: string };
   timeZone: string;
   maxConcurrentRequests: number;
 }
@@ -74,13 +76,16 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
   if (oidc && (!oidc.clientId || !oidc.clientSecret || !oidc.redirectUri)) {
     throw new ConfigError('OIDC_ISSUER needs OIDC_CLIENT_ID, OIDC_CLIENT_SECRET_FILE and OIDC_REDIRECT_URI.');
   }
-  if (mode === 'production' && !oidc) throw new ConfigError('Production requires OIDC sign-in (IAM-02).');
+  // Staff APIs at the edge (AND-05) accept the workforce IdP's access tokens for this API's audience.
+  const api = env.OIDC_API_AUDIENCE ? { issuer: env.OIDC_ISSUER ?? '', audience: env.OIDC_API_AUDIENCE } : undefined;
+  if (api && !api.issuer) throw new ConfigError('OIDC_API_AUDIENCE needs OIDC_ISSUER.');
+  if (mode === 'production' && !oidc && !api) throw new ConfigError('Production requires OIDC sign-in, or bearer tokens for an API (IAM-02).');
   // Sign-in talks to the workforce IdP, which is outside NATAX: only through the egress proxy
   // (INT-05). Node's fetch uses HTTPS_PROXY only when NODE_USE_ENV_PROXY=1.
   if (mode === 'production' && (!env.HTTPS_PROXY || env.NODE_USE_ENV_PROXY !== '1')) {
     throw new ConfigError('Production requires HTTPS_PROXY (the egress proxy), NO_PROXY for internal hosts, and NODE_USE_ENV_PROXY=1.');
   }
-  if (!oidc && !devSignIn) throw new ConfigError('No sign-in configured: set OIDC_ISSUER, or DEV_SIGN_IN=true in development.');
+  if (!oidc && !api && !devSignIn) throw new ConfigError('No sign-in configured: set OIDC_ISSUER, or DEV_SIGN_IN=true in development.');
 
   const timeZone = env.TIME_ZONE ?? 'America/Chicago';
   try {
@@ -99,6 +104,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     ...(tls ? { tls } : {}),
     devSignIn,
     ...(oidc ? { oidc } : {}),
+    ...(api ? { api } : {}),
     timeZone,
     maxConcurrentRequests: int('MAX_CONCURRENT_REQUESTS', env.MAX_CONCURRENT_REQUESTS, 200),
   };

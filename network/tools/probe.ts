@@ -13,7 +13,10 @@
 //   FAIL          at least one probe didn't                         exit 1
 //   INCONCLUSIVE  no failures, but some "blocked" results prove      exit 3
 //                 nothing, because nothing showed the target was up
-// Only PASS lets a verification gate pass.
+// Only PASS lets a verification gate pass. And PASS is corroboration, not proof: a timeout next to
+// a positive control is consistent with the firewall dropping it, but another device could have
+// done the same. Proof that the rules are right comes from reading them back (DEL-06, nft.ts);
+// probes show that reality agrees. Neither is enough on its own.
 
 import { connect } from 'node:net';
 import { readFileSync } from 'node:fs';

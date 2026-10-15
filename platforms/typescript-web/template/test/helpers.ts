@@ -1,6 +1,7 @@
 // Test helpers: a fresh test database, an application on a random port, and a client that
 // signs in through the real (development) sign-in and keeps its cookie and CSRF token.
 
+import type { JWTVerifyGetKey } from 'jose';
 import pg from 'pg';
 import { start } from '../src/app.ts';
 import { loadConfig, type Config } from '../src/config.ts';
@@ -42,11 +43,11 @@ export interface TestApp {
   client(): TestClient;
 }
 
-export async function startTestApp(options: { config?: Partial<Config>; pool?: Pool } = {}): Promise<TestApp> {
+export async function startTestApp(options: { config?: Partial<Config>; pool?: Pool; apiKeys?: JWTVerifyGetKey } = {}): Promise<TestApp> {
   const config = testConfig(options.config);
   const logs: string[] = [];
   const pool = options.pool ?? createPool(config.databaseUrl, config.dbPoolMax, { log: createLogger('test', (l) => logs.push(l)) });
-  const running = await start({ config, pool, log: createLogger('test', (l) => logs.push(l)) });
+  const running = await start({ config, pool, log: createLogger('test', (l) => logs.push(l)), ...(options.apiKeys ? { apiKeys: options.apiKeys } : {}) });
   const url = `http://127.0.0.1:${running.port}`;
   return {
     url,

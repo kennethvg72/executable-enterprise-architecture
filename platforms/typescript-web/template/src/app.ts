@@ -7,6 +7,7 @@ import { createServer as createHttpsServer } from 'node:https';
 import type { AddressInfo } from 'node:net';
 import { join } from 'node:path';
 import { createAuth } from './auth.ts';
+import type { JWTVerifyGetKey } from 'jose';
 import type { Config } from './config.ts';
 import { databaseReachable, type Pool } from './db.ts';
 import { createHealth } from './health.ts';
@@ -23,13 +24,15 @@ export interface Deps {
   pool: Pool;
   log: Logger;
   metrics?: Metrics;
+  /** The IdP's token signing keys; tests pass their own. Default: from the IdP's discovery document. */
+  apiKeys?: JWTVerifyGetKey;
 }
 
 export function createApp(deps: Deps) {
   const { config, pool, log } = deps;
   const metrics = deps.metrics ?? createMetrics();
   const router = createRouter();
-  const auth = createAuth({ pool, config, appName: APP_NAME });
+  const auth = createAuth({ pool, config, appName: APP_NAME, ...(deps.apiKeys ? { apiKeys: deps.apiKeys } : {}) });
 
   // Readiness checks only critical dependencies: architecture.yaml consumes with critical: true.
   // It uses a connection of its own: a busy pool is overload, not an unreachable database.
@@ -42,6 +45,9 @@ export function createApp(deps: Deps) {
   });
   router.get('/static/app.css', () => ({ status: 200, headers: { 'content-type': 'text/css; charset=utf-8' }, body: CSS }));
   auth.routes(router);
+
+  // An example of a staff API at the edge (AND-05): who the token says you are. Remove or replace it.
+  router.get('/api/me', auth.protectApi(['user'], (_req, user) => json({ id: user.id, name: user.name, roles: user.roles })));
 
   router.get('/', auth.protect(['user'], (_req, s) => htmlResponse(page({
     title: APP_NAME,

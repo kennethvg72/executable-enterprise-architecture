@@ -27,6 +27,10 @@ Each site has a /16. Within the datacenters, the third octet says what kind of t
 | 10.250.0.0/24 | PAW VPN (device certificate and user identity both required) |
 | 10.251.0.0/16 | Workforce VPN |
 
+| In Azure | Purpose |
+|---|---|
+| 10.4.10.0/24 | The Power Platform's delegated subnet, connected to DC1 and DC2 over ExpressRoute: custom connectors call NATAX APIs from here, as the signed-in user ([PA-09](../../platforms/power-apps/standards.md#pa-09-natax-systems-only-through-their-apis-as-the-signed-in-user)) |
+
 The ranges are for addressing and routing. They are **not** trust boundaries: a host in 10.1.20.0/24 can reach another host in 10.1.20.0/24 only if a declared flow allows it.
 
 ## How traffic flows

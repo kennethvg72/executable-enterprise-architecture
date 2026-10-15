@@ -10,7 +10,6 @@ table inet natax {
     ct state invalid drop
     iif lo accept
     ip protocol icmp icmp type { echo-request, destination-unreachable, time-exceeded } accept
-    ip saddr { 10.1.50.60, 10.2.50.60 } tcp dport 3128 accept comment "data-gateway to power-platform-relay through the egress proxy"
     ip saddr { 10.1.20.41, 10.1.20.42, 10.2.20.41, 10.2.20.42 } tcp dport 3128 accept comment "efile-gateway to tax-authority through the egress proxy"
     ip saddr { 10.1.40.11, 10.1.40.12, 10.2.40.11, 10.2.40.12 } tcp dport 3128 accept comment "payments to payment-processor through the egress proxy"
     ip saddr { 10.1.20.51, 10.2.20.51 } tcp dport 3128 accept comment "notification-service to email-provider through the egress proxy"

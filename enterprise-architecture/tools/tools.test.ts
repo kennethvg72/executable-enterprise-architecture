@@ -4,16 +4,19 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { anchor, checkLinks } from './check-links.ts';
 import { stringify } from 'yaml';
 import { checkDependencies, sectionMentions } from './check-dependencies.ts';
-import { REPO_ROOT, clone, intentChanges, loadManifest, loadModel, withApplications } from './lib/load.ts';
+import { REPO_ROOT, clone, intentChanges, loadExceptions, loadManifest, loadModel, withApplications } from './lib/load.ts';
+import { fail, pass } from './lib/report.ts';
 import { verifyNetwork } from '../../network/tools/verify.ts';
 import { verifyInfrastructure } from '../../infrastructure/tools/verify.ts';
 import { scanSecrets } from './scan-secrets.ts';
 import { validateManifest } from './validate-manifest.ts';
-import { runPipeline } from './pipeline.ts';
+import { checkPinnedVersions, runPipeline } from './pipeline.ts';
+import { applyExceptions, exceptionProblems } from './lib/exceptions.ts';
 
 const APP = join(REPO_ROOT, 'enterprise-architecture', 'tools', 'fixtures', 'registered-app');
 const failures = (results: { status: string; rule: string }[]) => results.filter((r) => r.status === 'fail').map((r) => r.rule);
@@ -163,13 +166,44 @@ test('dependency reasons are found only in the Dependencies section, by exact na
   assert.equal(sectionMentions(record, 'Dependencies', 'zo'), false);
 });
 
-test('the secret scanner finds keys and credentials, but not local development URLs', () => {
+test('the secret scanner finds every planted secret, and can\'t be silenced from inside the repository', () => {
+  // Built at runtime, so no file in this repository contains a real-looking secret.
+  const r = (n: number, chars = 'aB3dE6gH9jK2mN5pQ8sT1vW4yZ7') => Array.from({ length: n }, (_, i) => chars[(i * 7) % chars.length]).join('');
+  const planted: [string, string][] = [
+    ['src/key.pem', `-----BEGIN ${'RSA PRIVATE'} KEY-----`],
+    ['src/aws.ts', `const id = '${'AKIA'}${r(16, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567')}';`],
+    ['src/gh.ts', `const t = '${'ghp_'}${r(36)}';`],
+    ['src/gl.ts', `const t = '${'glpat-'}${r(20)}';`],
+    ['src/slack.ts', `const hook = '${'xoxb-'}${r(24)}';`],
+    ['src/stripe.ts', `const k = '${'sk_live_'}${r(24)}';`],
+    ['src/google.ts', `const k = '${'AIza'}${r(35)}';`],
+    ['src/sendgrid.ts', `const k = '${'SG.'}${r(22)}.${r(43)}';`],
+    ['.npmrc', `//registry.npmjs.org/:_authToken=${'npm_'}${r(36)}`],
+    ['src/azure.ts', `const c = 'DefaultEndpointsProtocol=https;AccountName=x;${'AccountKey='}${r(86)}==';`],
+    ['src/sas.ts', `const u = 'https://x.blob.core.windows.net/c?sv=2024&${'sig='}${r(44)}';`],
+    ['src/jwt.ts', `const t = '${'eyJ'}${r(20)}.${'eyJ'}${r(30)}.${r(43)}';`],
+    ['src/config.ts', `const settings = { clientSecret: '${r(24)}' };`],
+    ['.env.production', `DB_PASSWORD=${r(16)}`],
+    ['src/db.ts', `const url = 'postgres://app:${r(12)}@db.natax.internal/prod';`],
+  ];
   const dir = mkdtempSync(join(tmpdir(), 'scan-'));
   mkdirSync(join(dir, 'src'));
-  writeFileSync(join(dir, 'src', 'ok.ts'), "const url = 'postgres://app:app@localhost:5432/dev';\n");
+  // Not secrets: local development defaults, references, placeholders, code.
+  writeFileSync(join(dir, 'src', 'ok.ts'), [
+    "const url = 'postgres://app:app@localhost:5432/dev';",
+    'const password = process.env.DB_PASSWORD;',
+    "const token = '${TOKEN}';",
+    'const clientSecret = secretFile(env.OIDC_CLIENT_SECRET_FILE);',
+  ].join('\n'));
   assert.deepEqual(failures(scanSecrets(dir)), []);
-  writeFileSync(join(dir, 'src', 'bad.ts'), "const db = 'postgres://app:hunter22@db.natax.internal/prod';\nconst apiKey = 'sk_live_51HxQ2aBcDeFgHiJ';\n"); // secret-scan: allow
-  assert.equal(failures(scanSecrets(dir)).length, 2);
+  for (const [file, line] of planted) writeFileSync(join(dir, file), `${line} // secret-scan: allow\n`);
+  const found = scanSecrets(dir).filter((x) => x.status === 'fail').map((x) => x.message);
+  for (const [file] of planted) assert.ok(found.some((m) => m.includes(join(file))), `not found: ${file}`);
+  // A false positive is allowed centrally, by fingerprint, never by a comment in the repository.
+  const print = /fingerprint (\w+)/.exec(found[0]!)![1]!;
+  const allowlist = join(dir, '..', `allow-${print}.yaml`);
+  writeFileSync(allowlist, stringify({ allowed: [{ fingerprint: print, reason: 'test', 'approved-by': 'jalvarez' }] }));
+  assert.equal(scanSecrets(dir, allowlist).filter((x) => x.status === 'fail').length, planted.length - 1);
 });
 
 test('anchors follow the rule heading convention', () => {
@@ -222,8 +256,70 @@ test('the pipeline never runs candidate code outside an isolated runner, and say
   assert.ok(app.length > 0 && app.every((r) => r.status === 'skip' && r.rule === 'SEC-13'));
 });
 
+// The pipeline's own preflight runs the real canary; these tests stand in for it, so the test suite
+// never probes the network or writes outside its workspace on a developer's machine.
+const isolatedRunner = () => [pass('SEC-13', 'stand-in: every escape attempt failed')];
+
 test('a mandatory check that can\'t run makes the stage incomplete, not a pass', () => {
   // With --isolated, but no installed dependencies or tools here: the fixture has no lockfile to install from.
-  const { status } = runPipeline(APP, { today: new Date('2026-10-14'), isolated: true });
+  const { status } = runPipeline(APP, { today: new Date('2026-10-14'), isolated: true, preflight: isolatedRunner });
   assert.notEqual(status, 'PASS');
+});
+
+test('--isolated is checked, not believed: when the canary escapes, the candidate\'s code never runs (SEC-13)', () => {
+  const escaped = () => [fail('SEC-13', 'Run preflight: escaped. Expected: the internet is unreachable.')];
+  const { sections, status } = runPipeline(APP, { today: new Date('2026-10-14'), isolated: true, preflight: escaped });
+  const app = sections.find(([title]) => title.startsWith('Application'))![1];
+  assert.equal(status, 'FAIL');
+  assert.deepEqual(app.map((r) => r.rule), ['SEC-13']);
+  assert.match(app[0]!.message, /didn't run/);
+});
+
+test('every command fails its own process when it finds a problem: automation reads exit codes', () => {
+  const tools = join(REPO_ROOT, 'enterprise-architecture', 'tools');
+  const exit = (args: string[]) => spawnSync(process.execPath, args, { cwd: REPO_ROOT, encoding: 'utf8', timeout: 120_000 }).status;
+  // A canary that "escapes", and one that doesn't, so the runner check is tested without touching the machine.
+  const canary = (escapes: boolean) => {
+    const dir = mkdtempSync(join(tmpdir(), 'canary-'));
+    writeFileSync(join(dir, 'escape.canary.ts'), `import { test } from 'node:test';\nimport assert from 'node:assert/strict';\ntest('the internet is unreachable', () => { assert.equal(${escapes}, false, 'reached 1.1.1.1:443'); });\n`);
+    return dir;
+  };
+  assert.equal(exit([join(tools, 'verify-runner.ts'), '--canary', canary(true)]), 1, 'verify-runner, not isolated');
+  assert.equal(exit([join(tools, 'verify-runner.ts'), '--canary', canary(false)]), 0, 'verify-runner, isolated');
+  const bad = mkdtempSync(join(tmpdir(), 'bad-'));
+  const m = clone(loadManifest(APP));
+  m['problem-owner'] = 'aquinn';
+  writeFileSync(join(bad, 'architecture.yaml'), stringify(m));
+  writeFileSync(join(bad, 'package.json'), JSON.stringify({ dependencies: { pg: '8.23.1 || *' } }));
+  writeFileSync(join(bad, 'config.ts'), `export const key = '${'AKIA'}IOSFODNN7EXAMPLE';\n`);
+  assert.equal(exit([join(tools, 'validate-manifest.ts'), bad]), 1, 'validate-manifest');
+  assert.equal(exit([join(tools, 'check-dependencies.ts'), bad]), 1, 'check-dependencies');
+  assert.equal(exit([join(tools, 'scan-secrets.ts'), bad]), 1, 'scan-secrets');
+  assert.equal(exit([join(tools, 'pipeline.ts'), APP]), 3, 'pipeline, incomplete');
+  assert.equal(exit([join(REPO_ROOT, 'network', 'tools', 'probe.ts')]), 2, 'probe, no vantage point');
+});
+
+test('Board exceptions are validated before they cover anything, and cover only their own rules', () => {
+  const today = new Date('2026-10-15');
+  const real = loadExceptions().find((e) => e.id === 'EXC-2026-003')!;
+  assert.deepEqual(exceptionProblems(real, today), []);
+  const broken: [string, Partial<typeof real>][] = [
+    ['more than 12 months', { granted: '2026-07-01', expires: '2028-01-01' }],
+    ['a rule that doesn\'t exist', { rules: ['DAT-99'] }],
+    ['an owner who left', { owner: 'aquinn' }],
+    ['expired', { granted: '2025-01-01', expires: '2025-12-31' }],
+    ['no compensating controls', { 'compensating-controls': ' ' }],
+  ];
+  for (const [name, change] of broken) assert.ok(exceptionProblems({ ...real, ...change }, today).length > 0, `accepted: ${name}`);
+  const applied = applyExceptions([fail('DAT-02', 'Taxpayer identifiers in the warehouse.'), fail('DAT-01', 'No classification.')], [real]);
+  assert.deepEqual(applied.map((r) => [r.rule, r.status]), [['DAT-02', 'warn'], ['DAT-01', 'fail']]);
+  assert.match(applied[0]!.message, /EXC-2026-003/);
+  // Every exception the Board has granted is valid today.
+  for (const e of loadExceptions()) assert.deepEqual(exceptionProblems(e, today), [], e.id);
+});
+
+test('a candidate is judged against the versions it pins, or the stage says it can\'t (OWN-04)', () => {
+  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '1.0.0' }).map((r) => r.status), ['pass']);
+  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '2.0.0' }).map((r) => r.status), ['skip']);
+  assert.deepEqual(checkPinnedVersions({ 'no-such-architecture': '1.0.0' }).map((r) => r.status), ['skip']);
 });

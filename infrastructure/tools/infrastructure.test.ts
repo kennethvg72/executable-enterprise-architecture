@@ -113,6 +113,11 @@ test('the generated configuration is verified as written, so a renderer bug is c
     ['haproxy/platform-lb-dc2.cfg', 'other datacenter active', (t) => t.replace(/( server dc1-1 [^\n]*) backup/, '$1'), 'RES-06'],
     ['edge/health-checks.yaml', 'edge monitors the root page', (t) => t.replace('path: /health/ready', 'path: /'), 'RES-06'],
     ['keepalived/platform-lb-10.1.50.11.conf', 'VIP stays when HAProxy dies', (t) => t.replace(/track_script \{[^}]*\}/, ''), 'RES-02'],
+    ['patroni/core-db.dcs.yml', 'the running cluster turns strict', (t) => t.replace('synchronous_mode_strict: false', 'synchronous_mode_strict: true'), 'RES-05'],
+    ['patroni/app-db.yml', 'a cluster without its own etcd identity', (t) => t.replace(/ {2}cert: [^\n]*\n/, ''), 'RES-05'],
+    ['etcd/rbac.yaml', 'one cluster can write another\'s keys', (t) => t.replace('readwrite-prefix: /service/app-db/', 'readwrite-prefix: /service/'), 'SEC-09'],
+    ['haproxy/platform-lb-dc1.cfg', 'clients can flood /health/ready', (t) => t.replace(/ {2}http-request deny[^\n]*path_beg \/health\/[^\n]*\n/, ''), 'RES-06'],
+    ['edge/health-checks.yaml', 'the internet can flood /health/ready', (t) => t.replace('client-blocked-paths: [/health/]', 'client-blocked-paths: []'), 'RES-06'],
   ];
   for (const [file, name, mutate, rule] of mutations) {
     const files = new Map(rendered);

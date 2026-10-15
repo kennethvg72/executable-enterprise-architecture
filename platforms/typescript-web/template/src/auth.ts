@@ -1,16 +1,19 @@
 // Sign-in and sessions (IAM-02, IAM-04, TS-07).
 // - Production: OIDC authorization code flow with PKCE, using a certified library (SEC-10).
 // - Development: a sign-in form to pick a name and role, refused outside development (TS-06).
+// - Staff APIs at the edge (staff-edge, AND-05): a bearer access token from the workforce IdP,
+//   checked for signature, issuer, audience and expiry. No cookies, so no CSRF.
 // Sessions live in PostgreSQL; only a hash of the session ID is stored. Every POST needs
 // the session's CSRF token.
 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createRemoteJWKSet, jwtVerify, type JWTVerifyGetKey } from 'jose';
 import * as oidc from 'openid-client';
 import type { Config } from './config.ts';
 import type { Pool } from './db.ts';
 import { html, page } from './html.ts';
 import { HttpError, htmlResponse, redirect, text, type Handler, type Request, type Response, type Router } from './http.ts';
-import { ROLES, rolesFromGroups } from './roles.ts';
+import { ROLES, rolesFromClaims } from './roles.ts';
 
 export interface User { id: string; name: string; roles: string[] }
 export interface Session { user: User; csrf: string }
@@ -23,7 +26,7 @@ const hash = (id: string) => createHash('sha256').update(id).digest('hex');
 const cookie = (name: string, value: string, maxAgeSeconds: number) =>
   `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAgeSeconds}`;
 
-export function createAuth(options: { pool: Pool; config: Config; appName: string }) {
+export function createAuth(options: { pool: Pool; config: Config; appName: string; apiKeys?: JWTVerifyGetKey }) {
   const { pool, config, appName } = options;
   let oidcConfig: Promise<oidc.Configuration> | undefined;
   // Cache discovery, but not a failure: one blip at the IdP must not break sign-in until a restart.
@@ -67,6 +70,40 @@ export function createAuth(options: { pool: Pool; config: Config; appName: strin
     };
   }
 
+  // The IdP's signing keys, from its discovery document. Cached, but not a failure.
+  let remoteKeys: Promise<JWTVerifyGetKey> | undefined;
+  const apiKeys = (): Promise<JWTVerifyGetKey> => options.apiKeys ? Promise.resolve(options.apiKeys) : (remoteKeys ??= (async () => {
+    const issuer = config.api!.issuer.replace(/\/?$/, '/');
+    const res = await fetch(new URL('.well-known/openid-configuration', issuer), { signal: AbortSignal.timeout(5000) });
+    if (!res.ok) throw new Error(`OIDC discovery failed: ${res.status}`);
+    return createRemoteJWKSet(new URL(((await res.json()) as { jwks_uri: string }).jwks_uri));
+  })().catch((err: unknown) => { remoteKeys = undefined; throw err; }));
+
+  /** Wrap an API handler so it runs only with a valid access token carrying one of the given roles. */
+  function protectApi(roles: string[], handler: (req: Request, user: User) => Promise<Response> | Response): Handler {
+    return async (req) => {
+      if (!config.api) return text('Not found.', 404);
+      const unauthorized: Response = { ...text('A valid access token is required.', 401), headers: { 'content-type': 'text/plain; charset=utf-8', 'www-authenticate': 'Bearer' } };
+      const token = /^Bearer ([\w-]+\.[\w-]+\.[\w-]+)$/.exec(String(req.headers['authorization'] ?? ''))?.[1];
+      if (!token) return unauthorized;
+      let payload;
+      try {
+        ({ payload } = await jwtVerify(token, await apiKeys(), { issuer: config.api.issuer, audience: config.api.audience, algorithms: ['RS256'], clockTolerance: 60 }));
+      } catch (err) {
+        req.log.info('rejected token', { reason: err instanceof Error ? err.name : 'invalid' });
+        return unauthorized;
+      }
+      const user: User = {
+        id: String(payload['oid'] ?? payload.sub),
+        name: String(payload['name'] ?? payload['preferred_username'] ?? payload.sub),
+        roles: rolesFromClaims(payload['roles']),
+      };
+      req.log.info('access', { user: user.id, method: req.method, route: req.path });
+      if (!roles.some((r) => user.roles.includes(r))) return text('You do not have access to this.', 403);
+      return handler(req, user);
+    };
+  }
+
   async function verifyCsrf(req: Request, s: Session): Promise<void> {
     const form = await req.form();
     const sent = Buffer.from(form.get('csrf') ?? '');
@@ -80,7 +117,10 @@ export function createAuth(options: { pool: Pool; config: Config; appName: strin
     try {
       const base = new URL('https://app.invalid/');
       const target = new URL(value, base);
-      return target.origin === base.origin ? target.pathname + target.search : '/';
+      if (target.origin !== base.origin) return '/';
+      // Normalization can turn "/.//evil.example" into the path "//evil.example", which a browser
+      // reads as another site. A path on this application starts with exactly one slash.
+      return `/${target.pathname.replace(/^[/\\]+/, '')}${target.search}`;
     } catch {
       return '/';
     }
@@ -95,7 +135,7 @@ export function createAuth(options: { pool: Pool; config: Config; appName: strin
         const state = oidc.randomState();
         const url = oidc.buildAuthorizationUrl(conf, {
           redirect_uri: config.oidc.redirectUri,
-          scope: 'openid profile groups',
+          scope: 'openid profile',          // roles arrive as app roles in the ID token; there is no "groups" scope
           code_challenge: await oidc.calculatePKCECodeChallenge(verifier),
           code_challenge_method: 'S256',
           state,
@@ -137,9 +177,10 @@ export function createAuth(options: { pool: Pool; config: Config; appName: strin
       const claims = tokens.claims();
       if (!claims) throw new HttpError(400, 'The identity provider returned no ID token.');
       const user: User = {
-        id: claims.sub,
+        // oid is the user's ID in the workforce directory, the same in every application; sub differs per app.
+        id: String(claims['oid'] ?? claims.sub),
         name: String(claims.name ?? claims.preferred_username ?? claims.sub),
-        roles: rolesFromGroups(claims.groups),
+        roles: rolesFromClaims(claims['roles']),
       };
       return redirect(safeReturn(pending.returnTo), { 'set-cookie': [await createSession(user), cookie(OIDC_COOKIE, '', 0)] });
     });
@@ -160,7 +201,7 @@ export function createAuth(options: { pool: Pool; config: Config; appName: strin
     })));
   }
 
-  return { routes, protect, session };
+  return { routes, protect, protectApi, session };
 }
 
 export type Auth = ReturnType<typeof createAuth>;

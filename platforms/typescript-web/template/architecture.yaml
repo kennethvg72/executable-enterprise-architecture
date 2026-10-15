@@ -14,7 +14,7 @@ architecture:
   network: 1.0.0
   infrastructure: 1.0.0
 
-exposure: internal
+exposure: internal          # internal | staff-edge (an API for managed devices, AND-05) | internet (customers)
 
 users:
   identity-provider: workforce

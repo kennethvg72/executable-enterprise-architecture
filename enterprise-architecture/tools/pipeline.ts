@@ -26,9 +26,11 @@ import { verifyNetwork } from '../../network/tools/verify.ts';
 import { checkDependencies } from './check-dependencies.ts';
 import { checkLinks } from './check-links.ts';
 import { REPO_ROOT, intentChanges, loadManifest, loadModel, loadPlatform, readYaml, withApplications } from './lib/load.ts';
+import { applyExceptions, exceptionsFor } from './lib/exceptions.ts';
 import { fail, failed, format, pass, skip, warn, type Result } from './lib/report.ts';
 import { scanSecrets } from './scan-secrets.ts';
 import { validateManifest } from './validate-manifest.ts';
+import { verifyRunner } from './verify-runner.ts';
 
 interface Candidate { id: string; application: string; purpose: string }
 
@@ -72,7 +74,7 @@ function run(command: string, args: string[], cwd: string): { ok: boolean; outpu
   return { ok: r.status === 0, output: `${r.stdout ?? ''}${r.stderr ?? ''}` };
 }
 
-export function runPipeline(appDir: string, options: { candidateDir?: string | undefined; today?: Date; isolated?: boolean } = {}): { sections: [string, Result[]][]; status: Status } {
+export function runPipeline(appDir: string, options: { candidateDir?: string | undefined; today?: Date; isolated?: boolean; preflight?: () => Result[] } = {}): { sections: [string, Result[]][]; status: Status } {
   const manifest = loadManifest(appDir);
   const sections: [string, Result[]][] = [];
   const candidate = options.candidateDir && existsSync(join(options.candidateDir, 'candidate.yaml'))
@@ -88,6 +90,7 @@ export function runPipeline(appDir: string, options: { candidateDir?: string | u
   intake.push(!commit ? warn('AGT-04', 'The architecture is not a Git checkout: which version judged this candidate isn\'t recorded.')
     : dirty ? warn('AGT-04', `Judged against architecture commit ${commit}, with uncommitted changes: not a version the Board approved.`)
     : pass('AGT-04', `Judged against architecture commit ${commit}.`));
+  intake.push(...checkPinnedVersions(manifest.architecture ?? {}));
   sections.push(['Intake and manifest', intake]);
 
   sections.push(['Secrets (SEC-03)', scanSecrets(appDir)]);
@@ -120,6 +123,17 @@ export function runPipeline(appDir: string, options: { candidateDir?: string | u
   if (!options.isolated) {
     for (const c of platform?.checks ?? []) notRun({ ...c, rule: 'SEC-13' }, `${c.name}: runs the candidate's own code, so only in a disposable runner (--isolated).`);
   } else {
+    // --isolated is an assertion. Check it: the hostile canary runs here first, with the same
+    // environment the candidate gets, and finds what an earlier run left behind. Any escape, and
+    // the candidate's code doesn't run at all.
+    const preflight = (options.preflight ?? (() => verifyRunner({ runs: ['preflight'], env: candidateEnv(), cleanup: false })))();
+    const escaped = preflight.filter((r) => r.status === 'fail');
+    if (escaped.length) {
+      app.push(fail('SEC-13', `This runner isn't isolated, so the candidate's code didn't run: ${escaped.map((r) => r.message).join(' ')}`, 'Run candidates only in a disposable runner that the hostile canary verifies (verify-runner.ts).'));
+      sections.push([`Application (${manifest.runtime.technology})`, app]);
+      return { sections, status: 'FAIL' };
+    }
+    app.push(pass('SEC-13', `The hostile canary found no way out of this runner, and nothing left by an earlier run (${preflight.length} attempts).`));
     const before = architectureDigest();
     const workspace = mkdtempSync(join(tmpdir(), 'candidate-'));
     try {
@@ -161,9 +175,48 @@ export function runPipeline(appDir: string, options: { candidateDir?: string | u
   }
   sections.push([`Application (${manifest.runtime.technology})`, app]);
 
+  // Board exceptions: validated, then applied to exactly their rules for this application. An
+  // invalid exception covers nothing, and is itself a failure.
+  const { valid, problems } = exceptionsFor(manifest.application, options.today ?? new Date());
+  for (const section of sections) section[1] = applyExceptions(section[1], valid);
+  sections[0]![1].push(...problems);
+
   const all = sections.flatMap(([, r]) => r);
   const status: Status = failed(all) ? 'FAIL' : all.some((r) => r.status === 'skip') ? 'INCOMPLETE' : 'PASS';
   return { sections, status };
+}
+
+/** The version of each architecture in this checkout, from its VERSION file. */
+function checkoutVersion(name: string): string | undefined {
+  const dir = ['enterprise-architecture', 'network', 'infrastructure'].includes(name) ? name : join('platforms', name);
+  const file = join(REPO_ROOT, dir, 'VERSION');
+  return existsSync(file) ? readFileSync(file, 'utf8').trim() : undefined;
+}
+
+/**
+ * OWN-04: the candidate is judged against the versions it pins. This checkout holds one version of
+ * each architecture; a pinned version of another major isn't in it, so the stage can't judge that
+ * candidate here and says so. Rules the Board made mandatory immediately apply whatever is pinned.
+ */
+export function checkPinnedVersions(pins: Record<string, string>): Result[] {
+  const results: Result[] = [];
+  for (const [name, pinned] of Object.entries(pins)) {
+    const here = checkoutVersion(name);
+    const major = (v: string) => v.split('.')[0];
+    if (!here) results.push(skip('OWN-04', `${name} isn't in this checkout, so the candidate can't be judged against ${name} ${pinned} here.`));
+    else if (here === pinned) results.push(pass('OWN-04', `Judged against ${name} ${pinned}, as pinned.`));
+    else if (major(here) === major(pinned) && here.localeCompare(pinned, undefined, { numeric: true }) > 0) {
+      results.push(pass('OWN-04', `Pins ${name} ${pinned}; judged against ${here}, a later minor version, which never makes rules stricter.`));
+    } else {
+      results.push(skip('OWN-04', `Pins ${name} ${pinned}, but this checkout is ${name} ${here}. Judge it against the tag ${name}/v${pinned}.`));
+    }
+  }
+  const versions = readYaml<{ 'mandatory-immediately'?: { rule: string; 'from-version'?: string; reason?: string; since?: string }[] | null }>(
+    join(REPO_ROOT, 'enterprise-architecture', 'governance', 'versions.yaml'));
+  for (const m of versions['mandatory-immediately'] ?? []) {
+    results.push(warn(m.rule, `Mandatory immediately since ${m.since ?? '?'}, whatever version is pinned: ${m.reason ?? 'see versions.yaml'}. Judged against the current text${m['from-version'] ? ` (${m['from-version']})` : ''}; the Governance Agent reviews it.`));
+  }
+  return results;
 }
 
 if (import.meta.main) {

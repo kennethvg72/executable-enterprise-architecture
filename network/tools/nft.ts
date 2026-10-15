@@ -15,6 +15,8 @@ export interface NftRule {
   ports?: number[];
   /** tcp: the rule matches TCP (with or without a port); other: ICMP, VRRP and the like; any: every protocol. */
   protocol: 'tcp' | 'other' | 'any';
+  /** For "other": which protocol (icmp, vrrp, udp, ...). */
+  protocolName?: string;
   verdict: 'accept' | 'drop';
   line: string;
 }
@@ -52,6 +54,7 @@ function parseRule(line: string, original: string): NftRule {
       rule.ports = set(m[1]!).map(Number);
     } else if ((m = take(/^ip protocol (\w+)( icmp type \{[^}]*\})?/))) {
       rule.protocol = m[1] === 'tcp' ? 'tcp' : 'other';
+      if (rule.protocol === 'other') rule.protocolName = m[1];
     } else if ((m = take(/^(accept|drop)$/))) {
       rule.verdict = m[1] as 'accept' | 'drop';
       return rule;

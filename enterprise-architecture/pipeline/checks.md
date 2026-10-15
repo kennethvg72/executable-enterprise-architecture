@@ -2,7 +2,7 @@
 
 These are the checks the pipeline runs for each affected domain ([change-impact.md](change-impact.md)).
 
-- **Deterministic** checks give the same answer every time and need no AI. They take into account the Board's exceptions ([exceptions.yaml](../governance/exceptions.yaml)) for the application. A failure that remains after that can't be overridden by anyone, the Governance Agent included.
+- **Deterministic** checks give the same answer every time and need no AI. They take into account the Board's exceptions ([exceptions.yaml](../governance/exceptions.yaml)) for the application, after checking each one is valid ([escalation](../governance/escalation.md#exceptions); ✅ `lib/exceptions.ts`). A failure that remains after that can't be overridden by anyone, the Governance Agent included.
 - **Review** checks are judged by the Governance Agent against the cited rules.
 - The **Here** column shows what this proof of concept implements. ✅ means implemented in this repository's tools; 📄 means the check is described, and a real pipeline would implement it with the named kind of tool. A check that didn't run is reported as skipped, never as passed, and a skipped mandatory check makes the stage **incomplete**, which blocks a verdict like a failure ([pipeline README](README.md#running-the-pipeline-here)).
 

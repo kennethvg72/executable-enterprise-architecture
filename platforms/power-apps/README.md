@@ -14,7 +14,7 @@ Version: [VERSION](VERSION). Limits: [platform.yaml](platform.yaml). Governed by
 - **Queries must be delegable**, or they silently return wrong answers once the data grows ([PA-04](standards.md#pa-04-queries-are-delegable-or-they-are-wrong)).
 - **Solutions in Git, managed solutions in production, imported only by the pipeline** ([PA-05](standards.md#pa-05-environments-and-the-pipeline-as-the-only-way-into-production)).
 - **Users act as themselves; flows don't lend out privileges** ([PA-06](standards.md#pa-06-whose-identity-each-connection-uses), [PA-07](standards.md#pa-07-flows-dont-lend-out-privileges)).
-- **DLP policies are a boundary, not an authorization**; NATAX systems only through the data gateway, as the signed-in user ([PA-08](standards.md#pa-08-dlp-policies-are-a-boundary-not-an-authorization), [PA-09](standards.md#pa-09-natax-systems-only-through-the-data-gateway-with-real-authentication)).
+- **DLP policies are a boundary, not an authorization**; NATAX systems only through their APIs, as the signed-in user ([PA-08](standards.md#pa-08-dlp-policies-are-a-boundary-not-an-authorization), [PA-09](standards.md#pa-09-natax-systems-only-through-their-apis-as-the-signed-in-user)).
 
 ## What's here
 

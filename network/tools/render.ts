@@ -149,7 +149,8 @@ export function renderEgressAllowlist(policy: Policy): string {
   }
   const lines = [HEADER, '# Egress proxy: each service may reach only its declared externals (INT-05).', 'allow:'];
   for (const [service, e] of [...byService].sort(([a], [b]) => a.localeCompare(b))) {
-    lines.push(`  - service: ${service}`, `    sources: [${e.sources.join(', ')}]`, `    destinations: [${[...e.destinations].sort().join(', ')}]`);
+    // Quoted: an unquoted "*.example" is a YAML alias, and the file wouldn't parse.
+    lines.push(`  - service: ${service}`, `    sources: [${e.sources.join(', ')}]`, `    destinations: [${[...e.destinations].sort().map((d) => JSON.stringify(d)).join(', ')}]`);
   }
   lines.push('default: deny', '');
   return lines.join('\n');

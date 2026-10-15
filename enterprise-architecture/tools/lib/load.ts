@@ -106,7 +106,7 @@ export function withApplications(model: Model, appDirs: string[]): Model {
   appDirs.forEach((dir, n) => {
     const manifest = loadManifest(resolve(dir));
     // Only applications in NATAX's datacenters have hosts there. Power Apps reach NATAX through the
-    // data gateway, Android apps through published APIs: those are in the landscape already.
+    // Power Platform's zone, Android apps through published APIs: those are in the landscape already.
     if (loadPlatform(manifest.runtime.technology)?.['runs-on'] !== 'datacenters') return;
     const registered = model.services.get(manifest.application);
     const assigned = (site: string) => (registered?.instances ?? []).filter((i) => i.site === site).map((i) => i.address);

@@ -7,7 +7,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig } from '../src/config.ts';
 import pg from 'pg';
-import { ROLE_GROUPS, rolesFromGroups } from '../src/roles.ts';
+import { ROLE_GROUPS, rolesFromClaims } from '../src/roles.ts';
+import { SignJWT, createLocalJWKSet, exportJWK, generateKeyPair } from 'jose';
+import { createHealth } from '../src/health.ts';
 import { resetDatabase, startTestApp, testDatabaseUrl, type TestApp } from './helpers.ts';
 
 describe('configuration (TS-06, TS-07)', () => {
@@ -41,9 +43,10 @@ describe('configuration (TS-06, TS-07)', () => {
 });
 
 describe('roles (IAM-04)', () => {
-  test('roles come only from known IdP groups', () => {
-    assert.deepEqual(rolesFromGroups(['unrelated', ROLE_GROUPS.user]), ['user']);
-    assert.deepEqual(rolesFromGroups('not-a-list'), []);
+  test('roles come only from known app role values, never from group names', () => {
+    assert.deepEqual(rolesFromClaims(['unrelated', 'user']), ['user']);
+    assert.deepEqual(rolesFromClaims([ROLE_GROUPS.user]), []);
+    assert.deepEqual(rolesFromClaims('not-a-list'), []);
   });
   test('roles match architecture.yaml', () => {
     const manifest = readFileSync(new URL('../architecture.yaml', import.meta.url), 'utf8');
@@ -157,7 +160,10 @@ describe('the running application', () => {
   });
 
   test('sign-in only ever returns to this application (no open redirect)', async () => {
-    for (const evil of ['//evil.example/', '/\evil.example', 'https://evil.example/', '/	/evil.example']) {
+    // Including paths that only become "//evil.example" after normalization: the check must judge
+    // what the browser will receive, not what was sent.
+    for (const evil of ['//evil.example/', '/\\evil.example', 'https://evil.example/', '/	/evil.example',
+      '/.//evil.example/', '/./\\evil.example', '/..//evil.example', '/%2e//evil.example', '/a/..//evil.example']) {
       const res = await app.client().post('/sign-in', { name: 'A', role: '', return: evil }, { csrf: false });
       const location = res.headers.get('location') ?? '';
       // Browsers resolve the Location against this site; it must stay on this site.
@@ -206,5 +212,56 @@ describe('readiness when the database is unreachable (RES-06, FS-02)', () => {
     } finally {
       await app.close();
     }
+  });
+});
+
+describe('readiness under a flood (RES-06, RES-08)', () => {
+  test('300 concurrent readiness calls make one dependency check, not 300', async () => {
+    let runs = 0;
+    let clock = 0;
+    const health = createHealth([{ name: 'database', run: async () => { runs++; await new Promise((r) => setTimeout(r, 50)); } }], () => clock);
+    const results = await Promise.all(Array.from({ length: 300 }, () => health.ready()));
+    assert.equal(runs, 1);
+    assert.ok(results.every((r) => r.ready));
+    // Within the cache window, nothing is checked again; after it, exactly once more.
+    await health.ready();
+    assert.equal(runs, 1);
+    clock += 10_000;
+    await Promise.all(Array.from({ length: 300 }, () => health.ready()));
+    assert.equal(runs, 2);
+  });
+});
+
+describe('staff APIs with bearer tokens (AND-05, IAM-04)', () => {
+  const issuer = 'https://idp.test/tenant/v2.0';
+  const audience = 'api://my-application';
+  let app: TestApp;
+  let sign: (claims: Record<string, unknown>, options?: { audience?: string; issuer?: string; expires?: string }) => Promise<string>;
+  before(async () => {
+    const { publicKey, privateKey } = await generateKeyPair('RS256');
+    const jwk = { ...(await exportJWK(publicKey)), kid: 'test', alg: 'RS256' };
+    sign = (claims, o = {}) => new SignJWT(claims).setProtectedHeader({ alg: 'RS256', kid: 'test' })
+      .setIssuer(o.issuer ?? issuer).setAudience(o.audience ?? audience).setIssuedAt().setExpirationTime(o.expires ?? '5m').sign(privateKey);
+    app = await startTestApp({ config: { api: { issuer, audience } }, apiKeys: createLocalJWKSet({ keys: [jwk] }) });
+  });
+  after(() => app.close());
+  const call = (token?: string) => fetch(`${app.url}/api/me`, token ? { headers: { authorization: `Bearer ${token}` } } : {});
+
+  test('a valid token with the role gets through, as the user it names', async () => {
+    const res = await call(await sign({ oid: 'u-1', name: 'Dana', roles: ['user'] }));
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { id: 'u-1', name: 'Dana', roles: ['user'] });
+  });
+  test('no token, a forged, expired or misdirected token: 401', async () => {
+    assert.equal((await call()).status, 401);
+    const valid = await sign({ oid: 'u-1', roles: ['user'] });
+    assert.equal((await call(valid.slice(0, -4) + 'AAAA')).status, 401);
+    assert.equal((await call(await sign({ oid: 'u-1', roles: ['user'] }, { expires: '-5m' }))).status, 401);
+    assert.equal((await call(await sign({ oid: 'u-1', roles: ['user'] }, { audience: 'api://another-application' }))).status, 401);
+    assert.equal((await call(await sign({ oid: 'u-1', roles: ['user'] }, { issuer: 'https://evil.example/v2.0' }))).status, 401);
+  });
+  test('a valid token without the role: 403', async () => {
+    assert.equal((await call(await sign({ oid: 'u-2', roles: [] }))).status, 403);
+    assert.equal((await call(await sign({ oid: 'u-2', groups: ['my-application-users'] }))).status, 403);
   });
 });

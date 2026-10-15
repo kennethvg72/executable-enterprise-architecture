@@ -8,7 +8,7 @@ Version: [VERSION](VERSION). Governed by the [central architecture](../enterpris
 
 ## On every platform
 
-TypeScript web applications get all of it. Power Apps inherit Microsoft 365's availability, accepted once by the Board; the data gateway they use runs in both datacenters. An Android app's availability is its backend's. The details per platform are in [Platforms](../platforms/README.md#how-each-platform-meets-the-always-applied-architecture).
+TypeScript web applications get all of it. Power Apps inherit Microsoft 365's availability, accepted once by the Board; the NATAX APIs they call run in both datacenters. An Android app's availability is its backend's. The details per platform are in [Platforms](../platforms/README.md#how-each-platform-meets-the-always-applied-architecture).
 
 Infrastructure specialists work on this architecture itself, with agents ([BOOTSTRAP.md](BOOTSTRAP.md)).
 

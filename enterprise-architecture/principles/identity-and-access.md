@@ -29,7 +29,7 @@ At NATAX, identity replaces location as the basis for trust. Every person, devic
 ### IAM-04: Authorization is explicit, server-side and deny-by-default
 **Rule.** Every request is authorized on the server; anything not explicitly allowed is denied.
 
-- **Internal applications** define their roles in `architecture.yaml` and in code. Roles are assigned through workforce IdP groups, never inside the application. Group membership for roles that grant access to *Confidential* data or higher is reviewed by the Problem Owner every 90 days, and unreviewed memberships expire.
+- **Internal applications** define their roles in `architecture.yaml` and in code. Roles are assigned through workforce IdP groups, never inside the application: each role is an app role of the application's registration in the IdP, the groups are assigned to it there, and tokens carry the role values. Applications never authorize on group names, which aren't unique. Group membership for roles that grant access to *Confidential* data or higher is reviewed by the Problem Owner every 90 days, and unreviewed memberships expire.
 - **Customer-facing applications** also authorize every request against the record itself: a taxpayer reaches only their own filings, and an accounting firm only its own clients'.
 
 **Why.** Hidden buttons aren't access control. Access granted in an application's own user table is invisible to everyone else and is never removed. And for a tax platform, one customer reaching another's records by changing an ID in a URL is the most likely serious flaw.

@@ -6,6 +6,8 @@ dependencies:
     reason: The PostgreSQL driver. Talking the PostgreSQL wire protocol isn't something to build.
   - name: openid-client
     reason: OIDC sign-in (IAM-02). A certified implementation; security protocols are never built (SEC-10).
+  - name: jose
+    reason: Validating the workforce IdP's access tokens for staff APIs at the edge (AND-05). Already used by openid-client; token validation is never built (SEC-10).
   - name: typescript
     reason: Type checking only (tsc --noEmit). Node.js runs the code directly.
   - name: "@types/node"

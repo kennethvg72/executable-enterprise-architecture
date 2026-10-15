@@ -61,14 +61,16 @@ test('nothing outside the workspace is writable', () => {
   assert.deepEqual(written, [], `written: ${written.join(', ')}`);
 });
 
+// Runs: "1" plants markers and "2" looks for them (verify-runner, two runners in a row).
+// "preflight" is the pipeline, before every candidate: it looks for markers left by any earlier
+// run, then plants its own for the next one. In disposable runners, nothing is ever found.
 test('nothing survives from one run to the next', () => {
-  if (RUN === '1') {
-    for (const marker of MARKERS) try { writeFileSync(marker, 'canary'); } catch { /* not writable: fine */ }
-    return;
-  }
+  const plant = () => { for (const marker of MARKERS) try { writeFileSync(marker, 'canary'); } catch { /* not writable: fine */ } };
+  if (RUN === '1') { plant(); return; }
   const survived = MARKERS.filter((m) => existsSync(m));
-  for (const m of survived) rmSync(m, { force: true });
-  assert.deepEqual(survived, [], `left by the previous run: ${survived.join(', ')}`);
+  if (RUN === '2') for (const m of survived) rmSync(m, { force: true });
+  if (RUN === 'preflight') plant();
+  assert.deepEqual(survived, [], `left by an earlier run: ${survived.join(', ')}`);
 });
 
 test('the internet is unreachable', async () => {

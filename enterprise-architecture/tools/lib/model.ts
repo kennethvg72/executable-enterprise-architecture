@@ -29,6 +29,8 @@ export interface Zone {
 
 export interface External {
   fqdn: string;
+  /** Required for a wildcard fqdn: why nothing narrower works, and what limits the risk. */
+  'wildcard-reason'?: string;
   port: number;
   consumers: string[] | 'any';
 }

@@ -167,16 +167,16 @@
   expect: allow   # allowed to the proxy for staff sign-in; the proxy allowlist blocks the email provider
   rule: INT-05
 
-- name: The Power Platform's data gateway can't reach databases
-  from: data-gateway
+- name: The Power Platform can't reach databases
+  from: zone:power-platform
   to: platform-lb
   port: 5432
   expect: deny
-  rule: PA-07
+  rule: PA-09
 
-- name: The data gateway reaches the internet only through the egress proxy
-  from: data-gateway
-  to: 198.51.100.25
-  port: 443
+- name: The Power Platform can't reach application hosts directly, only APIs through the load balancer
+  from: zone:power-platform
+  to: rejection-triage
+  port: 8443
   expect: deny
-  rule: INT-05
+  rule: PA-09

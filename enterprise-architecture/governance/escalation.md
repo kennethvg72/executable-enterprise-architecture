@@ -34,7 +34,7 @@ The Board answers every escalation with one of these. **"Rejected" on its own is
 
 Exceptions are the last resort, never the default fix for an architectural shortcoming.
 
-- Every exception has a **named owner**, an **expiry date** (at most 12 months), the **rule IDs** it covers, and the **compensating controls** that apply until it ends.
+- Every exception has a **named owner**, an **expiry date** (at most 12 months), the **rule IDs** it covers, and the **compensating controls** that apply until it ends. The pipeline checks all of it before an exception covers anything: an exception with an owner who left, a rule that doesn't exist, no compensating controls or more than 12 months covers nothing, and is a failure itself. A valid exception turns failures of exactly its rules, for exactly its application, into warnings that cite it.
 - Exceptions are recorded in the Board's registry, [exceptions.yaml](exceptions.yaml), never in the application's own repository. The pipeline applies them and warns before they expire ([SIM-07](../principles/simplicity.md#sim-07-temporary-complexity-has-an-owner-and-an-end-date)).
 - An expired exception is treated as a failed check.
 - **If the same exception is requested for a second application, the Board must consider an architecture change instead.** Repeated exceptions are evidence that the architecture describes an environment that doesn't exist.

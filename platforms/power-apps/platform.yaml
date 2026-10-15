@@ -13,5 +13,5 @@ checks:                            # run by the pipeline's deterministic stage, 
   - { name: Playwright app and permission tests, rule: PA-12, run: npx playwright test, needs: node_modules }
 required-evidence:                 # checks a real pipeline runs, that this proof of concept doesn't automate
   - The solution checker's results contain no High or Critical findings (PA-13).
-  - The tenant's DLP policies, environment security groups and guest settings match approved-connectors.yaml and PA-05/PA-10.
+  - The tenant's connector policies (advanced connector policies on every Managed Environment, plus classic DLP for custom and HTTP connectors), environment security groups and guest settings match approved-connectors.yaml and PA-05/PA-08/PA-10.
   - The app's sharing matches the approved groups after import (PA-10).

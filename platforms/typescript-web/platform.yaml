@@ -4,7 +4,7 @@ platform: typescript-web
 runs-on: datacenters               # DC1 and DC2: the always-applied network and infrastructure architectures apply in full
 resilience-classes: [A, B, C]
 max-classification: taxpayer-restricted   # with a Technical Owner (OWN-03)
-exposure: [internal, internet]
+exposure: [internal, staff-edge, internet]   # staff-edge: APIs for NATAX-managed devices, with bearer tokens (AND-05)
 data-stores: [app-db, core-db]     # PostgreSQL clusters in the landscape (DAT-06)
 dependencies: approved-dependencies.yaml
 install: npm ci --ignore-scripts      # the pipeline installs from the lockfile itself; install scripts never run (SEC-13)

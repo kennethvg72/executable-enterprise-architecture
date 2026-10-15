@@ -54,6 +54,11 @@ zones:
   test-acceptance:
     description: Test and acceptance environments in both datacenters. Never production (SEC-07).
     cidrs: [10.1.60.0/22, 10.2.60.0/22]
+  power-platform:
+    description: >
+      The Power Platform's delegated subnet in NATAX's Azure subscription, connected to DC1 and DC2
+      over ExpressRoute. Custom connectors call NATAX APIs from here, as the signed-in user (PA-09).
+    cidrs: [10.4.10.0/24]
 
 # Destinations outside NATAX. Reached only through the egress proxy, and only by the
 # services listed under consumers (INT-05).
@@ -78,10 +83,6 @@ externals:
     fqdn: api.payment-processor.example
     port: 443
     consumers: [payments]
-  power-platform-relay:
-    fqdn: "*.servicebus.windows.net"
-    port: 443
-    consumers: [data-gateway]        # the data gateway connects out; nothing connects in (PA-07)
 
 # Flows every production service has, without declaring them (platform services).
 platform-flows:
@@ -160,17 +161,6 @@ services:
       - { site: dc2, address: 10.2.50.41 }
     provides: [{ name: logs, port: 6514, consumers: all-production }]
     peak-vcpu: 64
-
-  data-gateway:
-    kind: platform
-    description: On-premises data gateway cluster. The only path from Power Apps to NATAX APIs (PA-07). Outbound connections only.
-    class: B
-    owner: central-it
-    instances: [{ site: dc1, address: 10.1.50.60 }, { site: dc2, address: 10.2.50.60 }]
-    consumes:
-      - { external: power-platform-relay, purpose: The gateway's outbound connection to the Power Platform }
-      # One entry per NATAX API that Power Apps may call, each approved by its provider (INT-06). None today.
-    peak-vcpu: 8
 
   etcd-quorum:
     kind: quorum

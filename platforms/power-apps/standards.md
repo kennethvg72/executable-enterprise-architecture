@@ -63,19 +63,39 @@ Power Apps make building so easy that a team can have a working app by lunchtime
 **Verified by.** `test`: the Test Agent calls each elevated flow directly, as a user without the privilege and with someone else's record ID, and it must refuse. `review`: the flow declarations.
 
 ### PA-08: DLP policies are a boundary, not an authorization
-**Rule.** The tenant's data loss prevention policies decide which connectors an app may combine, generated from [approved-connectors.yaml](approved-connectors.yaml), by connector ID:
+**Rule.** Connector policies decide which connectors an app may use. They are generated from [approved-connectors.yaml](approved-connectors.yaml), by connector ID:
 
-- Only **Business** connectors are allowed; everything else, including connectors added to the platform in future, is **Blocked** by default. The generic HTTP connectors, consumer services and direct database connectors are always blocked.
-- Where the platform supports it, connector **action** and **endpoint** controls narrow approved connectors further (for example, which SharePoint sites or which actions).
-- DLP decides *which connectors*, not *which destinations* or *which records*. Destinations are controlled where they live: SharePoint and OneDrive external sharing is off, outbound mail to customers is blocked for these identities by mail flow rules (email to customers goes through notification-service, [INT-05](../../enterprise-architecture/principles/integration.md#int-05-shared-capabilities-are-used-not-rebuilt)), and tenant isolation blocks connections to other tenants. Records are controlled by PA-02.
+- **Every environment is a Managed Environment**, including makers' development environments; apps aren't built in the tenant's default environment. Each has an **advanced connector policy**: an allowlist of exactly the connectors under `allowed`. Everything else is unavailable, including connectors Microsoft adds later. On a Managed Environment, this also covers the Microsoft 365 connectors that classic DLP policies can't block (OneDrive for Business, Excel Online, Planner, Power BI and others).
+- **Alongside it, a classic DLP policy** covers what advanced connector policies don't cover yet. **Custom connectors** are classified by host: NATAX API hosts are Business, and everything else is Blocked. The **HTTP connectors** are Blocked.
+- **Where a maker portal doesn't yet enforce the advanced policy while an app is being built**, the pipeline's check is the control. The app's declared connectors must all be allowed, and so must the connection references in its solution.
+- Connector policies decide *which connectors*, not *which destinations* or *which records*. Destinations are controlled where they live:
+  - SharePoint and OneDrive external sharing is off.
+  - Mail flow rules stop these identities from emailing customers. Email to customers goes through notification-service ([INT-05](../../enterprise-architecture/principles/integration.md#int-05-shared-capabilities-are-used-not-rebuilt)).
+  - Tenant isolation blocks connections to other tenants.
 
-**Why.** Without DLP, any app can copy NATAX data to any of hundreds of connectors. With it, the platform keeps apps to the connectors NATAX trusts, the platform's version of [network policy](../../network/README.md). But a business connector can still reach the wrong place, so DLP is one boundary among several, never the only one.
-**Verified by.** `test`: the app's declared connectors against the approved list (check-dependencies); the tenant's DLP policies against [approved-connectors.yaml](approved-connectors.yaml), daily ([DEL-04](../../enterprise-architecture/principles/delivery.md#del-04-infrastructure-and-network-are-code)).
+  Records are controlled by PA-02.
 
-### PA-09: NATAX systems only through the data gateway, with real authentication
-**Rule.** Power Apps reach NATAX systems only through **custom connectors** to their published APIs, through the **on-premises data gateway**, never through a direct database connection. The gateway is a host in the [landscape](../../enterprise-architecture/landscape/landscape.yaml) and the [network policy](../../network/README.md): it consumes exactly the APIs Power Apps may call, and each of those APIs lists the gateway as a consumer, with its provider's consent ([INT-06](../../enterprise-architecture/principles/integration.md#int-06-dont-break-consumers-and-onboard-them-without-ceremony)). The API authenticates every call with OAuth 2.0 through the workforce IdP, *as the signed-in user*, and authorizes it as it would any other caller ([IAM-04](../../enterprise-architecture/principles/identity-and-access.md#iam-04-authorization-is-explicit-server-side-and-deny-by-default)). Custom connectors don't support every authentication method (no client credentials grant, and API keys have restrictions through the gateway), so the pattern is chosen and tested before the API is built for it.
-**Why.** Declaring the gateway as a network path says *which host* may connect, not *who* is calling. Without user-level authentication, every Power App would reach the API with the gateway's reach.
-**Verified by.** `test`: the API's tests refuse calls without a valid user token, and with a user who lacks the role. The network policy covers the gateway's paths.
+**Why.** Without connector policies, any app can copy NATAX data to any of hundreds of connectors. Classic DLP alone can't keep that promise: about twenty Microsoft 365 connectors can't be blocked by it. They become "Non-Business", which still lets an app combine them. An architecture that says "everything else is blocked" on classic DLP describes a control that doesn't exist. Even an allowed connector can still reach the wrong place, so a connector policy is one boundary among several, never the only one.
+**Verified by.** `test`:
+- The app's declared connectors are checked against the allowlist (check-dependencies).
+- The tenant's policies and environment settings are checked against [approved-connectors.yaml](approved-connectors.yaml) every day ([DEL-04](../../enterprise-architecture/principles/delivery.md#del-04-infrastructure-and-network-are-code)).
+- The Security Agent's sweeps look for apps that use connectors outside the list.
+
+### PA-09: NATAX systems only through their APIs, as the signed-in user
+**Rule.** Power Apps reach NATAX systems only through **custom connectors** to their published APIs, never through a direct database connection.
+
+- **The user's own token.** A custom connector authenticates with **OAuth 2.0 through Microsoft Entra ID, as the signed-in user**. The API validates the token and authorizes the user as it would any other caller ([IAM-04](../../enterprise-architecture/principles/identity-and-access.md#iam-04-authorization-is-explicit-server-side-and-deny-by-default)).
+- **The Power Platform's own network.** The connector reaches the API through the Power Platform's **virtual network support**: a subnet in NATAX's Azure subscription, delegated to the Power Platform, and connected to DC1 and DC2 over ExpressRoute.
+  - In the [landscape](../../enterprise-architecture/landscape/landscape.yaml), that subnet is the zone `power-platform`.
+  - An API that Power Apps may call lists `zone:power-platform` as a consumer, with its provider's consent ([INT-06](../../enterprise-architecture/principles/integration.md#int-06-dont-break-consumers-and-onboard-them-without-ceremony)). Like any internal application, it is reached through platform-lb.
+  - The Power Platform accepts only certificates with a complete public chain, so such an API also has a certificate from a public CA, for its name under `natax.example`.
+- **No on-premises data gateway.** Custom connectors through the gateway don't support OAuth; the only way to send a user's identity through it is Windows authentication, with each user typing their password into a connection ([IAM-02](../../enterprise-architecture/principles/identity-and-access.md#iam-02-applications-dont-handle-passwords)). And the gateway's outbound relay, `*.servicebus.windows.net`, would let a host inside NATAX reach any Azure Relay namespace, including one an attacker owns.
+
+**Why.** A network path says *which network* may connect, not *who* is calling. Without the user's own token, every Power App would reach the API with the reach of whatever connected on its behalf.
+**Verified by.** `test`:
+- The API's tests refuse calls without a valid user token, and calls from a user who lacks the role.
+- The network policy and its expectations cover `zone:power-platform`: it reaches only the APIs that list it, and never a database.
+- `approved-connectors.yaml` has no gateway connectors, and the landscape has no gateway.
 
 ### PA-10: Staff only, shared with groups
 **Rule.**

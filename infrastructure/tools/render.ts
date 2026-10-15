@@ -28,6 +28,12 @@ export function publishedVia(model: Model, lb: string): Published[] {
   return out.sort((a, b) => a.service.id.localeCompare(b.service.id));
 }
 
+/** The edge appliances' own addresses: the source of their health monitors. */
+const edgeNodes = (model: Model) => {
+  const edge = model.services.get('edge-adc');
+  return [...(edge?.instances ?? []), ...(edge?.egress ?? [])].map((i) => i.address);
+};
+
 const vipOf = (model: Model, lb: string, site: string) =>
   model.services.get(lb)!.vips!.find((v) => v.site === site)!.address;
 
@@ -69,6 +75,10 @@ export function renderHaproxy(model: Model, site: string): string {
     '  mode http',
     `  bind ${vip}:443 ssl crt /etc/haproxy/certs/ alpn h2,http/1.1`,
     '  option forwardfor',
+    '  # Health endpoints answer the load balancers, not clients: a flood of readiness calls',
+    '  # from users must not become the overload. The backend checks go straight to the',
+    '  # servers; only the edge appliances\' global DNS monitor comes through here (RES-06, RES-08).',
+    `  http-request deny deny_status 404 if { path_beg /health/ } !{ src ${edgeNodes(model).join(' ')} }`,
     '  # Overload protection: reject quickly rather than queue (RES-08).',
     '  maxconn 5000',
     ...apps.map((p) => `  use_backend ${p.service.id} if { req.hdr(host),field(1,:) -i ${p.service.id}.${DOMAIN} }`),
@@ -117,6 +127,42 @@ export function renderHaproxy(model: Model, site: string): string {
   return lines.join('\n');
 }
 
+/** Patroni's dynamic, cluster-wide settings, as YAML lines (unindented). */
+function dcsSettings(cluster: Service): string[] {
+  const r = cluster.replication!;
+  return [
+    'ttl: 30                            # longer than the WAN rerouting time (sites.md)',
+    'loop_wait: 10',
+    'retry_timeout: 10',
+    `synchronous_mode: ${r.synchronous}`,
+    `synchronous_mode_strict: ${r.strict}       # ${r.strict ? 'stop writes without a synchronous replica' : 'keep writing when the replica is lost (RES-05)'}`,
+    'synchronous_node_count: 1',
+    'postgresql:',
+    '  use_pg_rewind: true',
+    '  parameters:',
+    '    synchronous_commit: "on"',
+    '    ssl: "on"',
+    '    ssl_min_protocol_version: TLSv1.3',
+  ];
+}
+
+/**
+ * The settings Patroni keeps in the DCS, for the running cluster. Patroni reads bootstrap.dcs only
+ * when a cluster is first created; after that, these settings change only through its API. So the
+ * deployment process applies this file to the running cluster, and drift detection compares it
+ * with what the cluster reports (DEL-04).
+ */
+export function renderPatroniDcs(cluster: Service): string {
+  return [
+    HEADER,
+    `# Dynamic configuration of ${cluster.id}, applied to the running cluster by the deployment process:`,
+    `#   patronictl -c /etc/patroni/patroni.yml edit-config --replace patroni/${cluster.id}.dcs.yml --force`,
+    '# Drift detection compares it daily with GET /config on the leader (DEL-04).',
+    ...dcsSettings(cluster),
+    '',
+  ].join('\n');
+}
+
 export function renderPatroni(model: Model, cluster: Service): string {
   const etcd = model.services.get('etcd-quorum')!;
   const client = etcd.provides!.find((p) => p.name === 'client')!.port;
@@ -124,31 +170,44 @@ export function renderPatroni(model: Model, cluster: Service): string {
   return [
     HEADER,
     `# Patroni settings shared by every node of ${cluster.id}. Node-specific settings`,
-    '# (name, addresses, certificates) are added per node at deployment.',
+    '# (name, addresses) are added per node at deployment.',
     `scope: ${cluster.id}`,
     'etcd3:',
     '  protocol: https',
     `  hosts: [${etcd.instances.map((i) => `${i.address}:${client}`).join(', ')}]   # one voting member per site (RES-04)`,
+    '  cacert: /etc/patroni/natax-workload-ca.pem',
+    `  # The certificate's name is the cluster's etcd user, which may touch only /service/${cluster.id}/`,
+    '  # (etcd/rbac.yaml): another cluster sharing the quorum can\'t take its leader lock (SEC-09).',
+    `  cert: /etc/patroni/patroni-${cluster.id}.pem`,
+    `  key: /etc/patroni/patroni-${cluster.id}.key`,
     'bootstrap:',
-    '  dcs:',
-    '    ttl: 30                            # longer than the WAN rerouting time (sites.md)',
-    '    loop_wait: 10',
-    '    retry_timeout: 10',
-    `    synchronous_mode: ${r.synchronous}`,
-    `    synchronous_mode_strict: ${r.strict}       # ${r.strict ? 'stop writes without a synchronous replica' : 'keep writing when the replica is lost (RES-05)'}`,
-    '    synchronous_node_count: 1',
-    '    postgresql:',
-    '      use_pg_rewind: true',
-    '      parameters:',
-    '        synchronous_commit: "on"',
-    '        ssl: "on"',
-    '        ssl_min_protocol_version: TLSv1.3',
+    `  dcs:                               # used only when the cluster is first created; afterwards patroni/${cluster.id}.dcs.yml`,
+    ...dcsSettings(cluster).map((l) => `    ${l}`),
     'watchdog:',
     `  mode: ${r.watchdog}                   # fence a primary that loses its leader lock`,
     '  device: /dev/watchdog',
     '  safety_margin: 5',
     'tags:',
     `  nofailover: false                  # ${r.promote === 'synchronous-replica-only' ? 'with synchronous_mode, Patroni promotes only the synchronous replica' : r.promote}`,
+    '',
+  ].join('\n');
+}
+
+/**
+ * etcd's access control: every Patroni cluster sharing the quorum has its own user, named after
+ * its client certificate, with access to its own keys only (SEC-09). Applied by the deployment
+ * process with etcdctl (role add, role grant-permission --prefix, user add --no-password).
+ */
+export function renderEtcdRbac(model: Model): string {
+  const clusters = [...model.services.values()].filter((c) => c.kind === 'database-cluster' && c.replication);
+  return [
+    HEADER,
+    '# etcd access control for the Patroni clusters that share the quorum (SEC-09).',
+    'auth: enabled                      # with --client-cert-auth: a client certificate\'s name is its user',
+    'roles:',
+    ...clusters.flatMap((c) => [`  - role: patroni-${c.id}`, `    readwrite-prefix: /service/${c.id}/`]),
+    'users:',
+    ...clusters.flatMap((c) => [`  - user: patroni-${c.id}`, `    roles: [patroni-${c.id}]`]),
     '',
   ].join('\n');
 }
@@ -218,6 +277,7 @@ export function renderEdgeSpec(model: Model): string {
       '      interval-seconds: 2',
       '      down-after-failures: 3',
       '      up-after-successes: 2',
+      '    client-blocked-paths: [/health/]   # for the monitor only, never forwarded from clients (RES-08)',
       '    global:                        # DNS-based global load balancing (RES-02)',
       '      ttl-seconds: 30',
       '      withdraw-site-after-seconds: 60',
@@ -255,8 +315,12 @@ export function renderAll(model: Model): Map<string, string> {
     }
   }
   for (const s of model.services.values()) {
-    if (s.kind === 'database-cluster') files.set(`patroni/${s.id}.yml`, renderPatroni(model, s));
+    if (s.kind === 'database-cluster' && s.replication) {
+      files.set(`patroni/${s.id}.yml`, renderPatroni(model, s));
+      files.set(`patroni/${s.id}.dcs.yml`, renderPatroniDcs(s));
+    }
   }
+  files.set('etcd/rbac.yaml', renderEtcdRbac(model));
   files.set('edge/health-checks.yaml', renderEdgeSpec(model));
   files.set('failure-simulation.md', renderMarkdown(SCENARIOS.map((sc) => simulate(model.landscape, sc))));
   return files;

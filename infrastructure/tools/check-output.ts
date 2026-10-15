@@ -60,7 +60,9 @@ export function checkGeneratedConfig(model: Model, files: Map<string, string>): 
         if (!(sections.get('frontend apps') ?? []).some((l) => l.startsWith(`use_backend ${service.id} `))) found.push(`no route to ${service.id}`);
       }
     }
-    problems('RES-06', file, found, 'Fix the renderer, then regenerate.', `${file}: every published service is health-checked on its readiness path, over verified TLS, with all its instances.`);
+    const frontend = sections.get('frontend apps') ?? [];
+    if (!frontend.some((l) => /^http-request deny\b.*\bpath_beg \/health\//.test(l))) found.push('clients can call /health/* through the load balancer');
+    problems('RES-06', file, found, 'Fix the renderer, then regenerate.', `${file}: every published service is health-checked on its readiness path, over verified TLS, with all its instances; clients can't reach /health/*.`);
   }
 
   // ---- keepalived: each load balancer node can take over its datacenter's VIP.
@@ -76,28 +78,50 @@ export function checkGeneratedConfig(model: Model, files: Map<string, string>): 
   }
   problems('RES-02', 'keepalived', found, 'Fix the renderer, then regenerate.', 'Every load balancer node can take over its datacenter\'s VIP, and gives it up when HAProxy dies.');
 
-  // ---- Patroni: synchronous, not strict, fenced by a watchdog, quorum across three sites.
-  for (const db of [...model.services.values()].filter((s: Service) => s.kind === 'database-cluster' && s.replication)) {
+  // ---- Patroni: synchronous, not strict, fenced by a watchdog, quorum across three sites. The
+  // dynamic settings are checked in the file applied to the running cluster: bootstrap.dcs only
+  // counts when a cluster is first created, and must say the same.
+  const clusters = [...model.services.values()].filter((s: Service) => s.kind === 'database-cluster' && s.replication);
+  for (const db of clusters) {
     const file = `patroni/${db.id}.yml`;
     const text = files.get(file);
-    if (text === undefined) { results.push(fail('DEL-06', `${file} is missing.`, 'Generate it.')); continue; }
-    const cfg = parse(text) as { etcd3?: { protocol?: string; hosts?: string[] }; bootstrap?: { dcs?: Record<string, unknown> & { postgresql?: { parameters?: Record<string, unknown> } } }; watchdog?: { mode?: string } };
-    const dcs = cfg.bootstrap?.dcs ?? {};
+    const dcsText = files.get(`patroni/${db.id}.dcs.yml`);
+    if (text === undefined || dcsText === undefined) { results.push(fail('DEL-06', `${text === undefined ? file : `patroni/${db.id}.dcs.yml`} is missing.`, 'Generate it.')); continue; }
+    type Dcs = Record<string, unknown> & { postgresql?: { parameters?: Record<string, unknown> } };
+    const cfg = parse(text) as { etcd3?: { protocol?: string; hosts?: string[]; cert?: string }; bootstrap?: { dcs?: Dcs }; watchdog?: { mode?: string } };
+    const dcs = (parse(dcsText) ?? {}) as Dcs;
     const found: string[] = [];
     if (dcs['synchronous_mode'] !== true) found.push('not synchronous');
     if (dcs['synchronous_mode_strict'] !== false) found.push('strict synchronous mode, which stops writes when the replica is lost');
     if (dcs['synchronous_node_count'] !== 1) found.push('not exactly one synchronous replica');
+    if (String(dcs.postgresql?.parameters?.['ssl']) !== 'on') found.push('PostgreSQL without TLS');
+    if (JSON.stringify(cfg.bootstrap?.dcs) !== JSON.stringify(dcs)) found.push('bootstrap.dcs differs from the settings applied to the running cluster');
     if (cfg.watchdog?.mode !== 'required') found.push(`watchdog "${cfg.watchdog?.mode}", so a primary that loses its lock may keep writing`);
     const sites = new Set((cfg.etcd3?.hosts ?? []).map((h) => siteOf(h.split(':')[0]!, model.landscape.sites)));
     if ((cfg.etcd3?.hosts ?? []).length !== 3 || sites.size !== 3 || sites.has(undefined)) found.push('the quorum isn\'t three members in three sites');
     if (cfg.etcd3?.protocol !== 'https') found.push('quorum traffic isn\'t encrypted');
-    if (String(dcs.postgresql?.parameters?.['ssl']) !== 'on') found.push('PostgreSQL without TLS');
-    problems('RES-05', file, found, 'Fix the renderer, then regenerate.', `${file}: synchronous, not strict, watchdog fencing, quorum across three sites.`);
+    if (!cfg.etcd3?.cert?.includes(`patroni-${db.id}.`)) found.push('it doesn\'t use its own etcd identity');
+    problems('RES-05', file, found, 'Fix the renderer, then regenerate.', `${file}: synchronous, not strict, watchdog fencing, quorum across three sites, its own etcd identity; the same settings for new and running clusters.`);
   }
+
+  // ---- etcd: each cluster's identity may touch only its own keys, so one cluster sharing the
+  // quorum can't take another's leader lock.
+  const rbacText = files.get('etcd/rbac.yaml');
+  const rbac = rbacText === undefined ? undefined : parse(rbacText) as { auth?: string; roles?: { role: string; 'readwrite-prefix'?: string; 'read-prefix'?: string }[]; users?: { user: string; roles?: string[] }[] };
+  const rbacFound: string[] = [];
+  if (!rbac) rbacFound.push('etcd/rbac.yaml is missing');
+  else if (rbac.auth !== 'enabled') rbacFound.push('authentication is not enabled');
+  for (const db of rbac ? clusters : []) {
+    const user = rbac!.users?.find((u) => u.user === `patroni-${db.id}`);
+    if (!user) { rbacFound.push(`no etcd user for ${db.id}`); continue; }
+    const prefixes = (user.roles ?? []).flatMap((r) => rbac!.roles?.filter((x) => x.role === r) ?? []).flatMap((x) => [x['readwrite-prefix'], x['read-prefix']]).filter(Boolean);
+    if (prefixes.length === 0 || prefixes.some((pre) => pre !== `/service/${db.id}/`)) rbacFound.push(`${db.id}'s identity can reach ${prefixes.join(', ') || 'nothing'}, not only /service/${db.id}/`);
+  }
+  problems('SEC-09', 'etcd/rbac.yaml', rbacFound, 'Fix the renderer, then regenerate.', 'Each database cluster\'s etcd identity can touch only its own keys.');
 
   // ---- Edge appliances: readiness monitors, and every instance in the pool.
   const edgeText = files.get('edge/health-checks.yaml');
-  const edge = edgeText === undefined ? undefined : (parse(edgeText) as { services?: { name: string; pool?: { address: string }[]; monitor?: { protocol?: string; path?: string; 'expect-status'?: number } }[] }).services ?? [];
+  const edge = edgeText === undefined ? undefined : (parse(edgeText) as { services?: { name: string; pool?: { address: string }[]; monitor?: { protocol?: string; path?: string; 'expect-status'?: number }; 'client-blocked-paths'?: string[] }[] }).services ?? [];
   const edgeFound: string[] = [];
   if (!edge) edgeFound.push('edge/health-checks.yaml is missing');
   for (const { service, provide } of published(model, 'edge-adc')) {
@@ -105,6 +129,7 @@ export function checkGeneratedConfig(model: Model, files: Map<string, string>): 
     if (!entry) { if (edge) edgeFound.push(`no monitor for ${service.id}/${provide.name}`); continue; }
     if (entry.monitor?.path !== provide.health?.path || entry.monitor?.protocol !== 'https' || entry.monitor?.['expect-status'] !== 200) edgeFound.push(`${service.id}/${provide.name} isn't monitored on ${provide.health?.path} over HTTPS`);
     if (!sameSet((entry.pool ?? []).map((p) => p.address), service.instances.map((i) => i.address))) edgeFound.push(`${service.id}/${provide.name}'s pool isn't exactly its instances`);
+    if (!(entry['client-blocked-paths'] ?? []).includes('/health/')) edgeFound.push(`${service.id}/${provide.name} forwards /health/* from the internet`);
   }
   problems('RES-06', 'edge/health-checks.yaml', edgeFound, 'Fix the renderer, then regenerate.', 'Every internet-facing service is monitored on its readiness path, with all its instances.');
   return results;

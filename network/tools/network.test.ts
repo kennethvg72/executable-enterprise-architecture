@@ -8,7 +8,7 @@ import { REPO_ROOT, clone, loadLandscape, loadModel, readYaml } from '../../ente
 import type { Model } from '../../enterprise-architecture/tools/lib/model.ts';
 import { compilePolicy, isAllowed } from './policy.ts';
 import { probePlan, renderHostRuleset } from './render.ts';
-import { checkGeneratedRules, checkInvariants, type Expectation } from './verify.ts';
+import { checkEgressAllowlist, checkGeneratedRules, checkInvariants, type Expectation } from './verify.ts';
 import { renderAll } from './compile.ts';
 import { classify } from './probe.ts';
 
@@ -153,6 +153,8 @@ test('the generated rules are verified as written, so a renderer bug is caught (
     ['nftables/payments.nft', 'default allow', (t) => t.replace('hook input priority filter; policy drop;', 'hook input priority filter; policy accept;'), 'ZTN-03'],
     ['nftables/calc-engine.nft', 'SSH from anywhere', insert('tcp dport 22 accept'), 'IAM-06'],
     ['nftables/returns-service.nft', 'a statement nobody can verify', insert('meta l4proto tcp accept'), 'DEL-06'],
+    ['nftables/payments.nft', 'UDP accepted, which no probe tests', insert('ip saddr 10.0.0.0/8 ip protocol udp accept'), 'ZTN-03'],
+    ['nftables/hq-router.nft', 'app-db replication can\'t transit HQ', (t) => t.replace(/[^\n]*ip saddr 10\.1\.30\.31 ip daddr 10\.2\.30\.31 tcp dport 5432 accept[^\n]*\n/, ''), 'RES-04'],
   ];
   for (const [file, name, mutate, rule] of mutations) {
     const files = new Map(rendered);
@@ -171,4 +173,24 @@ test('"the internet" in the intent never includes NATAX hosts', () => {
   assert.ok(isAllowed(policy, '198.51.100.10', '10.1.10.10', 443));
   // The egress proxy reaches the internet, not NATAX's own load balancers.
   assert.equal(isAllowed(policy, '10.1.50.30', '10.1.50.10', 443), undefined);
+});
+
+test('the egress allowlist is checked as the proxy reads it (INT-05, DEL-06)', () => {
+  const model = loadModel();
+  const rendered = renderAll(model, compilePolicy(model));
+  const fails = (text: string) => checkEgressAllowlist(model, new Map([['egress-proxy/allowlist.yaml', text]])).filter((r) => r.status === 'fail').map((r) => r.message);
+  const allowlist = rendered.get('egress-proxy/allowlist.yaml')!;
+  assert.deepEqual(fails(allowlist), []);
+  const mutations: [string, (t: string) => string, RegExp][] = [
+    ['not valid YAML', (t) => t.replace('"login.workforce-idp.example:443"', '*.workforce-idp.example:443'), /valid YAML/],
+    ['an undeclared destination', (t) => t.replace('"login.workforce-idp.example:443"', '"login.workforce-idp.example:443", "paste.example:443"'), /doesn't declare/],
+    ['a wildcard without a reason', (t) => t.replace('"login.workforce-idp.example:443"', '"*.workforce-idp.example:443"'), /wildcard|doesn't declare/],
+    ['a declared destination missing', (t) => t.replace(', "api.sms-provider.example:443"', ''), /can't reach its declared/],
+    ['default allow', (t) => t.replace('default: deny', 'default: allow'), /default isn't deny/],
+  ];
+  for (const [name, mutate, expected] of mutations) {
+    const changed = mutate(allowlist);
+    assert.notEqual(changed, allowlist, `the mutation "${name}" didn't apply`);
+    assert.ok(fails(changed).some((m) => expected.test(m)), `not caught: ${name}`);
+  }
 });

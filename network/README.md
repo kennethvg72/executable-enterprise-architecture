@@ -8,7 +8,7 @@ Version: [VERSION](VERSION). Governed by the [central architecture](../enterpris
 
 ## On every platform
 
-TypeScript web applications get generated host firewalls; Power Apps reach NATAX only through the data gateway, a host in this policy like any other; Android devices get no network trust at all, only APIs at the edge. The details per platform are in [Platforms](../platforms/README.md#how-each-platform-meets-the-always-applied-architecture).
+TypeScript web applications get generated host firewalls; Power Apps reach NATAX only from the Power Platform's own subnet, a zone in this policy that reaches only the APIs that list it; Android devices get no network trust at all, only APIs at the edge. The details per platform are in [Platforms](../platforms/README.md#how-each-platform-meets-the-always-applied-architecture).
 
 Network specialists work on this architecture itself, with agents ([BOOTSTRAP.md](BOOTSTRAP.md)): the landscape, the compiler, the tests.
 

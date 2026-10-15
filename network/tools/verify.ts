@@ -6,13 +6,14 @@
 
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { parse as parseYaml } from 'yaml';
 import { REPO_ROOT, appArgs, loadModel, readYaml, withApplications } from '../../enterprise-architecture/tools/lib/load.ts';
 import type { Model } from '../../enterprise-architecture/tools/lib/model.ts';
 import { siteOf, within } from '../../enterprise-architecture/tools/lib/net.ts';
 import { fail, pass, report, warn, type Result } from '../../enterprise-architecture/tools/lib/report.ts';
 import { GENERATED, renderAll } from './compile.ts';
 import { compilePolicy, isAllowed, type Policy } from './policy.ts';
-import { parseRuleset, rulesAllow, type HostRules } from './nft.ts';
+import { chainAccepts, parseRuleset, rulesAllow, type HostRules, type NftChain } from './nft.ts';
 import { probePlan, transitFlows } from './render.ts';
 
 export interface Expectation {
@@ -52,6 +53,14 @@ export function checkExpectations(model: Model, policy: Policy, expectations: Ex
       ? fail(e.rule, `${e.name}: allowed ${leaks[0]!.f}->${leaks[0]!.t}:${e.port} by "${leaks[0]!.flow!.purpose}" (${leaks[0]!.flow!.declaredIn}).`, 'Remove the declaration that allows it, or correct the expectation if intent has changed.')
       : pass(e.rule, e.name);
   });
+}
+
+/** Every (source, destination) address pair of a flow that crosses between DC1 and DC2. */
+function crossPairs(f: Policy['flows'][number], model: Model): [string, string][] {
+  const site = (a: string) => siteOf(a, model.landscape.sites);
+  return f.from.addresses.flatMap((src) => f.to.addresses
+    .filter((dst) => (site(src) === 'dc1' && site(dst) === 'dc2') || (site(src) === 'dc2' && site(dst) === 'dc1'))
+    .map((dst): [string, string] => [src, dst]));
 }
 
 /** Rules that must hold for any landscape, not just today's. */
@@ -120,7 +129,10 @@ export function checkInvariants(model: Model, policy: Policy): Result[] {
     return (fromSites.has('dc1') && toSites.has('dc2')) || (fromSites.has('dc2') && toSites.has('dc1'));
   });
   const transit = hq?.transit ? transitFlows(model, policy) : [];
-  const untransited = crossDc.filter((f) => !transit.some((t) => t.port === f.port && t.purpose === f.purpose));
+  // Matched by addresses and port: two flows with the same port and purpose (app-db and core-db
+  // replication) must each be covered, not one standing in for the other.
+  const untransited = crossDc.filter((f) => crossPairs(f, model).some(([src, dst]) =>
+    !transit.some((t) => t.port === f.port && t.from.includes(src) && t.to.includes(dst))));
   const quorum = crossDc.filter((f) => svc(f.from.id)?.voting || svc(f.from.id)?.kind === 'database-cluster');
   check('RES-04', crossDc.length > 0 && untransited.length === 0,
     `All ${crossDc.length} DC1 <-> DC2 flows can transit HQ, including ${quorum.length} replication and quorum flows.`,
@@ -166,8 +178,29 @@ export function checkGeneratedRules(model: Model, policy: Policy, files: Map<str
     const ssh = (chains.get('input')?.rules ?? []).filter((r) => r.verdict === 'accept' && r.protocol !== 'other' && (!r.ports || r.ports.includes(22)));
     const loose = ssh.filter((r) => !r.saddr || r.saddr.negate || !r.saddr.cidrs.every((c) => paw.some((z) => within(c.split('/')[0]!, z))));
     if (loose.length) results.push(fail('IAM-06', `nftables/${s.id}.nft accepts port 22 from more than PAWs: ${loose[0]!.line}`, 'Only privileged access workstations reach port 22.'));
+    // Probes only test TCP. The rules can show the rest: nothing is accepted except declared TCP,
+    // ICMP for diagnostics, and VRRP between load balancer pairs (ZTN-03).
+    for (const [hook, chain] of chains) {
+      const other = chain.rules.filter((r) => r.verdict === 'accept' && (r.protocol === 'any' || (r.protocol === 'other' && !['icmp', 'vrrp'].includes(r.protocolName ?? ''))));
+      if (other.length) results.push(fail('ZTN-03', `nftables/${s.id}.nft (${hook}) accepts more than TCP, ICMP and VRRP: ${other[0]!.line}`, 'Fix the renderer: every accepted flow is a declared TCP flow.'));
+    }
     for (const i of [...s.instances, ...(s.vips ?? []), ...(s.egress ?? [])]) hosts.set(i.address, chains);
   }
+  // RES-04 on the output: when the direct fiber is down, the HQ router itself must forward every
+  // declared DC1 <-> DC2 address pair, checked on its generated rules, not on the renderer's list.
+  const hqText = files.get('nftables/hq-router.nft');
+  if (model.landscape.sites['hq']?.transit) {
+    let forward: NftChain | undefined;
+    try { forward = hqText === undefined ? undefined : parseRuleset(hqText).get('forward'); } catch (e) {
+      results.push(fail('DEL-06', `nftables/hq-router.nft can't be read back: ${(e as Error).message}`, 'Fix the renderer.'));
+    }
+    const crossing = policy.flows.filter((f) => f.from.kind === 'service' && f.to.kind === 'service').flatMap((f) => crossPairs(f, model).map(([src, dst]) => ({ f, src, dst })));
+    const missing = crossing.filter(({ f, src, dst }) => !forward || !chainAccepts(forward, src, dst, f.port));
+    results.push(missing.length
+      ? fail('RES-04', `The HQ router's generated rules don't forward ${missing.length} of ${crossing.length} DC1 <-> DC2 paths, for example ${missing.slice(0, 3).map(({ f, src, dst }) => `${f.from.id} ${src} -> ${f.to.id} ${dst}:${f.port}`).join('; ')}.`, 'Fix the renderer, then regenerate. Without transit, losing the direct fiber splits the datacenters.')
+      : pass('RES-04', `The HQ router's generated rules forward all ${crossing.length} declared DC1 <-> DC2 paths.`));
+  }
+
   // A path between two hosts without generated rules (zones, the edge appliances) is enforced
   // elsewhere; the host rules can't decide it, so it isn't counted either way.
   const probes = probePlan(model, policy).filter((pr) => hosts.has(pr.from) || hosts.has(pr.to));
@@ -185,6 +218,50 @@ export function checkGeneratedRules(model: Model, policy: Policy, files: Map<str
   return results;
 }
 
+/**
+ * DEL-06 for the egress proxy: its generated allowlist, parsed as the proxy would parse it, lets
+ * each service reach exactly its declared externals, from its own addresses, and nothing else.
+ */
+export function checkEgressAllowlist(model: Model, files: Map<string, string>): Result[] {
+  const text = files.get('egress-proxy/allowlist.yaml');
+  if (text === undefined) return [fail('INT-05', 'egress-proxy/allowlist.yaml is missing.', 'Generate it.')];
+  let doc: { allow?: { service: string; sources?: string[]; destinations?: string[] }[]; default?: string };
+  try { doc = parseYaml(text) as typeof doc; } catch (e) {
+    return [fail('DEL-06', `egress-proxy/allowlist.yaml isn't valid YAML: ${(e as Error).message.split('\n')[0]}`, 'Fix the renderer: the proxy would reject the file, or read something else.')];
+  }
+  const found: string[] = [];
+  if (doc.default !== 'deny') found.push('the default isn\'t deny');
+  const externals = model.landscape.externals ?? {};
+  const expected = new Map<string, Set<string>>();
+  for (const svc of model.services.values()) {
+    for (const c of svc.consumes ?? []) {
+      const ext = c.external ? externals[c.external] : undefined;
+      if (!ext || (ext.consumers !== 'any' && !ext.consumers.includes(svc.id))) continue;
+      const set = expected.get(svc.id) ?? new Set<string>();
+      set.add(`${ext.fqdn}:${ext.port}`);
+      expected.set(svc.id, set);
+    }
+  }
+  for (const entry of doc.allow ?? []) {
+    const svc = model.services.get(entry.service);
+    const want = expected.get(entry.service) ?? new Set<string>();
+    for (const d of entry.destinations ?? []) {
+      if (!want.has(d)) found.push(`${entry.service} may reach ${d}, which it doesn't declare`);
+      const ext = Object.values(externals).find((x) => `${x.fqdn}:${x.port}` === d);
+      if (d.includes('*') && !ext?.['wildcard-reason']) found.push(`${entry.service} may reach the wildcard ${d} without a recorded reason: anything under it is an exfiltration channel`);
+    }
+    const own = (svc?.egress ?? svc?.instances ?? []).map((i) => i.address);
+    if ((entry.sources ?? []).some((a) => !own.includes(a))) found.push(`${entry.service}'s entry accepts addresses that aren't its own`);
+  }
+  for (const [service, want] of expected) {
+    const entry = doc.allow?.find((e) => e.service === service);
+    for (const d of want) if (!entry?.destinations?.includes(d)) found.push(`${service} can't reach its declared ${d}`);
+  }
+  return [found.length
+    ? fail('INT-05', `egress-proxy/allowlist.yaml: ${found.join('; ')}.`, 'Fix the renderer or the declarations, then regenerate.')
+    : pass('INT-05', 'The egress allowlist, as the proxy reads it, allows each service exactly its declared externals.')];
+}
+
 /** The generated files as deployed (from the repository), or as this model would produce them. */
 function generatedFiles(model: Model, policy: Policy, fromDisk: boolean): Map<string, string> {
   const rendered = renderAll(model, policy);
@@ -199,6 +276,7 @@ export function verifyNetwork(model = loadModel(), { drift = true } = {}): Resul
     ...checkInvariants(model, policy),
     ...checkExpectations(model, policy, expectations),
     ...checkGeneratedRules(model, policy, generatedFiles(model, policy, drift), expectations),
+    ...checkEgressAllowlist(model, generatedFiles(model, policy, drift)),
     ...(drift ? checkDrift(model, policy) : []),
   ];
 }

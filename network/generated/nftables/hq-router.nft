@@ -9,8 +9,6 @@ table inet natax-hq {
     ct state invalid drop
 
     # DC1 <-> DC2 transit, used when the direct fiber is down.
-    ip saddr 10.1.50.60 ip daddr { 10.2.50.30, 10.2.50.31 } tcp dport 3128 accept comment "transit: data-gateway to power-platform-relay through the egress proxy"
-    ip saddr 10.2.50.60 ip daddr { 10.1.50.30, 10.1.50.31 } tcp dport 3128 accept comment "transit: data-gateway to power-platform-relay through the egress proxy"
     ip saddr 10.1.30.21 ip daddr 10.2.30.21 tcp dport 2380 accept comment "transit: Raft consensus between the three sites"
     ip saddr 10.2.30.21 ip daddr 10.1.30.21 tcp dport 2380 accept comment "transit: Raft consensus between the three sites"
     ip saddr 10.1.30.11 ip daddr 10.2.30.11 tcp dport 5432 accept comment "transit: Synchronous replication to the other datacenter"
@@ -90,8 +88,6 @@ table inet natax-hq {
     ip saddr { 10.2.50.30, 10.2.50.31 } ip daddr { 10.1.50.40, 10.1.50.41 } tcp dport 6514 accept comment "transit: Ship logs (OBS-01)"
     ip saddr { 10.1.50.20, 10.1.50.21 } ip daddr { 10.2.50.40, 10.2.50.41 } tcp dport 6514 accept comment "transit: Ship logs (OBS-01)"
     ip saddr { 10.2.50.20, 10.2.50.21 } ip daddr { 10.1.50.40, 10.1.50.41 } tcp dport 6514 accept comment "transit: Ship logs (OBS-01)"
-    ip saddr 10.1.50.60 ip daddr { 10.2.50.40, 10.2.50.41 } tcp dport 6514 accept comment "transit: Ship logs (OBS-01)"
-    ip saddr 10.2.50.60 ip daddr { 10.1.50.40, 10.1.50.41 } tcp dport 6514 accept comment "transit: Ship logs (OBS-01)"
     ip saddr 10.1.30.21 ip daddr { 10.2.50.40, 10.2.50.41 } tcp dport 6514 accept comment "transit: Ship logs (OBS-01)"
     ip saddr 10.2.30.21 ip daddr { 10.1.50.40, 10.1.50.41 } tcp dport 6514 accept comment "transit: Ship logs (OBS-01)"
     ip saddr 10.1.30.11 ip daddr { 10.2.50.40, 10.2.50.41 } tcp dport 6514 accept comment "transit: Ship logs (OBS-01)"
@@ -125,8 +121,6 @@ table inet natax-hq {
     ip saddr { 10.2.50.30, 10.2.50.31 } ip daddr { 10.1.50.20, 10.1.50.21 } tcp dport 8200 accept comment "transit: Fetch secrets at runtime (SEC-03)"
     ip saddr { 10.1.50.40, 10.1.50.41 } ip daddr { 10.2.50.20, 10.2.50.21 } tcp dport 8200 accept comment "transit: Fetch secrets at runtime (SEC-03)"
     ip saddr { 10.2.50.40, 10.2.50.41 } ip daddr { 10.1.50.20, 10.1.50.21 } tcp dport 8200 accept comment "transit: Fetch secrets at runtime (SEC-03)"
-    ip saddr 10.1.50.60 ip daddr { 10.2.50.20, 10.2.50.21 } tcp dport 8200 accept comment "transit: Fetch secrets at runtime (SEC-03)"
-    ip saddr 10.2.50.60 ip daddr { 10.1.50.20, 10.1.50.21 } tcp dport 8200 accept comment "transit: Fetch secrets at runtime (SEC-03)"
     ip saddr 10.1.30.21 ip daddr { 10.2.50.20, 10.2.50.21 } tcp dport 8200 accept comment "transit: Fetch secrets at runtime (SEC-03)"
     ip saddr 10.2.30.21 ip daddr { 10.1.50.20, 10.1.50.21 } tcp dport 8200 accept comment "transit: Fetch secrets at runtime (SEC-03)"
     ip saddr 10.1.30.11 ip daddr { 10.2.50.20, 10.2.50.21 } tcp dport 8200 accept comment "transit: Fetch secrets at runtime (SEC-03)"
@@ -160,8 +154,6 @@ table inet natax-hq {
     ip saddr { 10.2.50.40, 10.2.50.41 } ip daddr { 10.1.50.30, 10.1.50.31 } tcp dport 9464 accept comment "transit: Scrape metrics (OBS-02)"
     ip saddr { 10.1.50.40, 10.1.50.41 } ip daddr { 10.2.50.20, 10.2.50.21 } tcp dport 9464 accept comment "transit: Scrape metrics (OBS-02)"
     ip saddr { 10.2.50.40, 10.2.50.41 } ip daddr { 10.1.50.20, 10.1.50.21 } tcp dport 9464 accept comment "transit: Scrape metrics (OBS-02)"
-    ip saddr { 10.1.50.40, 10.1.50.41 } ip daddr 10.2.50.60 tcp dport 9464 accept comment "transit: Scrape metrics (OBS-02)"
-    ip saddr { 10.2.50.40, 10.2.50.41 } ip daddr 10.1.50.60 tcp dport 9464 accept comment "transit: Scrape metrics (OBS-02)"
     ip saddr { 10.1.50.40, 10.1.50.41 } ip daddr 10.2.30.21 tcp dport 9464 accept comment "transit: Scrape metrics (OBS-02)"
     ip saddr { 10.2.50.40, 10.2.50.41 } ip daddr 10.1.30.21 tcp dport 9464 accept comment "transit: Scrape metrics (OBS-02)"
     ip saddr { 10.1.50.40, 10.1.50.41 } ip daddr 10.2.30.11 tcp dport 9464 accept comment "transit: Scrape metrics (OBS-02)"
@@ -203,7 +195,6 @@ table inet natax-hq {
     ip saddr 10.3.90.0/24 ip daddr { 10.1.50.30, 10.1.50.31, 10.2.50.30, 10.2.50.31 } tcp dport 22 accept comment "Just-in-time administration (IAM-06)"
     ip saddr 10.3.90.0/24 ip daddr { 10.1.50.20, 10.1.50.21, 10.2.50.20, 10.2.50.21 } tcp dport 22 accept comment "Just-in-time administration (IAM-06)"
     ip saddr 10.3.90.0/24 ip daddr { 10.1.50.40, 10.1.50.41, 10.2.50.40, 10.2.50.41 } tcp dport 22 accept comment "Just-in-time administration (IAM-06)"
-    ip saddr 10.3.90.0/24 ip daddr { 10.1.50.60, 10.2.50.60 } tcp dport 22 accept comment "Just-in-time administration (IAM-06)"
     ip saddr 10.3.90.0/24 ip daddr { 10.1.30.21, 10.2.30.21 } tcp dport 22 accept comment "Just-in-time administration (IAM-06)"
     ip saddr 10.250.0.0/24 ip daddr 10.3.70.21 tcp dport 22 accept comment "Just-in-time administration (IAM-06)"
     ip saddr 10.3.90.0/24 ip daddr { 10.1.30.11, 10.2.30.11 } tcp dport 22 accept comment "Just-in-time administration (IAM-06)"
