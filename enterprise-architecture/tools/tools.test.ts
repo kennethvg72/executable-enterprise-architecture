@@ -1,5 +1,8 @@
 // Tests for the central tools: manifest validation, dependency and secret checks, links.
 
+// The authorities (real nftables, HAProxy) have their own tests: npm run test:authority.
+process.env.NATAX_AUTHORITIES = 'off';
+
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';

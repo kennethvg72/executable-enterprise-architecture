@@ -1,6 +1,9 @@
 // Tests for the network policy compiler and verifier. Each test makes one realistic mistake
 // in a copy of the landscape and checks that the tools catch it, with a path forward.
 
+// The authorities (real nftables, HAProxy) have their own tests: npm run test:authority.
+process.env.NATAX_AUTHORITIES = 'off';
+
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { join } from 'node:path';

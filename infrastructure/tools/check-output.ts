@@ -42,6 +42,7 @@ const HAPROXY: Grammar = {
     /^option forwardfor$/,
     /^http-request deny deny_status 404 if \{ path_beg \/health\/ \}$/,
     new RegExp(String.raw`^http-request deny deny_status 403 if \{ src ${CIDR}(?: ${CIDR})* \} !\{ req\.hdr\(host\),field\(1,:\) -i ${HOST}(?: ${HOST})* \}$`),
+    new RegExp(String.raw`^http-request deny deny_status 403 if !\{ src ${CIDR}(?: ${CIDR})* \}$`),
     /^http-request return status 503 content-type text\/plain string "Busy, please retry" if \{ fe_conn gt \d+ \}$/,
     /^maxconn \d+$/,
     new RegExp(String.raw`^use_backend ${NAME} if \{ req\.hdr\(host\),field\(1,:\) -i ${HOST} \}$`),
@@ -109,7 +110,7 @@ function checkHaproxy(model: Model, site: string, vip: string, sections: Map<str
       expected.set(consumer, e);
     }
   }
-  const limits = front.filter((l) => l.startsWith('http-request deny deny_status 403')).map((l) => {
+  const limits = front.filter((l) => l.startsWith('http-request deny deny_status 403 if { src ')).map((l) => {
     const m = /\{ src (.+?) \} !\{ req\.hdr\(host\),field\(1,:\) -i (.+) \}$/.exec(l)!;
     return { addresses: m[1]!.split(' '), hosts: m[2]!.split(' ') };
   });
@@ -119,6 +120,11 @@ function checkHaproxy(model: Model, site: string, vip: string, sections: Map<str
     else if (!sameSet(limit.hosts, [...new Set(e.hosts)])) found.push(`${consumer} may name ${limit.hosts.join(', ')}, not exactly ${e.hosts.join(', ')}`);
   }
   if (limits.length !== expected.size) found.push(`${limits.length} host limits for ${expected.size} consumers`);
+  // A source that consumes nothing published here may name nothing.
+  const everyone = [...new Set([...expected.values()].flatMap((e) => e.addresses))];
+  const catchAll = front.find((l) => l.startsWith('http-request deny deny_status 403 if !{ src '));
+  const covered = catchAll ? catchAll.slice('http-request deny deny_status 403 if !{ src '.length, -' }'.length).split(' ') : [];
+  if (everyone.length && !sameSet(covered, everyone)) found.push('sources that consume nothing here may name any application');
 
   for (const { service, provide } of published(model, 'platform-lb')) {
     const isDb = service.kind === 'database-cluster';

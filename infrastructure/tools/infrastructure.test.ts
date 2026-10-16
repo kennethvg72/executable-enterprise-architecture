@@ -1,6 +1,9 @@
 // Tests for the infrastructure checks and the failure simulation. Each test makes one
 // realistic mistake in a copy of the landscape and checks that it is caught.
 
+// The authorities (real nftables, HAProxy) have their own tests: npm run test:authority.
+process.env.NATAX_AUTHORITIES = 'off';
+
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -135,7 +138,8 @@ test('the generated configuration is verified as written, so a renderer bug is c
     ['haproxy/platform-lb-dc1.cfg', 'a server that isn\'t an instance', (t) => t.replace(/( server dc1-1 [^\n]*\n)/, '$1  server dc1-9 10.1.20.99:8443 check ssl verify required ca-file /etc/haproxy/ca/natax-workload-ca.pem sni str(rejection-triage.natax.internal) verifyhost rejection-triage.natax.internal maxconn 200\n'), 'RES-06'],
     ['haproxy/platform-lb-dc1.cfg', 'a backend nothing declares', (t) => t.replace('backend unknown-application', 'backend shadow-app\n  mode http\n  balance leastconn\n\nbackend unknown-application'), 'RES-06'],
     ['haproxy/platform-lb-dc1.cfg', 'staff may name any application', (t) => t.replace(/( {2}http-request deny deny_status 403[^\n]*-i [^\n]*) \}/, '$1 payments.natax.internal }'), 'RES-06'],
-    ['haproxy/platform-lb-dc1.cfg', 'no host limit for staff', (t) => t.replace(/ {2}http-request deny deny_status 403[^\n]*\n/, ''), 'RES-06'],
+    ['haproxy/platform-lb-dc1.cfg', 'no host limit for staff', (t) => t.replace(/ {2}http-request deny deny_status 403 if \{ src [^\n]*\n/, ''), 'RES-06'],
+    ['haproxy/platform-lb-dc1.cfg', 'sources that consume nothing may name anything', (t) => t.replace(/ {2}http-request deny deny_status 403 if !\{ src [^\n]*\n/, ''), 'RES-06'],
     ['haproxy/platform-lb-dc1.cfg', 'round robin instead of least connections', (t) => t.replace('balance leastconn', 'balance roundrobin'), 'DEL-06'],
     ['haproxy/platform-lb-dc1.cfg', 'unknown hosts sent to an application', (t) => t.replace('default_backend unknown-application', 'default_backend rejection-triage'), 'DEL-06'],
     ['keepalived/platform-lb-10.1.50.11.conf', 'the VIP only in a comment', (t) => t.replace(/( {4})(10\.1\.50\.10\/24)/, '$1# $2'), 'RES-02'],

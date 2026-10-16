@@ -44,8 +44,13 @@ function hostLimits(model: Model, apps: Service[]): string[] {
       }
     }
   }
-  return [...allowed].sort(([a], [b]) => a.localeCompare(b)).map(([, e]) =>
-    `  http-request deny deny_status 403 if { src ${[...new Set(e.addresses)].sort().join(' ')} } !{ req.hdr(host),field(1,:) -i ${[...new Set(e.hosts)].sort().join(' ')} }`);
+  const all = [...new Set([...allowed.values()].flatMap((e) => e.addresses))].sort();
+  return [
+    // A source that consumes nothing published here may name nothing.
+    ...(all.length ? [`  http-request deny deny_status 403 if !{ src ${all.join(' ')} }`] : []),
+    ...[...allowed].sort(([a], [b]) => a.localeCompare(b)).map(([, e]) =>
+      `  http-request deny deny_status 403 if { src ${[...new Set(e.addresses)].sort().join(' ')} } !{ req.hdr(host),field(1,:) -i ${[...new Set(e.hosts)].sort().join(' ')} }`),
+  ];
 }
 
 const vipOf = (model: Model, lb: string, site: string) =>

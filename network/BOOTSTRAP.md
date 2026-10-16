@@ -7,7 +7,7 @@ For an AI agent that has completed steps 2 to 4 of the [general bootstrap](../BO
    npm run generate
    npm run verify
    ```
-   `npm run verify` must report `0 failed` for the network policy. On a machine without Linux and nftables in the pinned version, it ends INCOMPLETE (exit code 3): the fast reader ran and found nothing wrong, but the authority, which proves it, couldn't. That's expected on a laptop; in WSL with nftables installed, it must pass.
+   `npm run verify` must report `0 failed` for the network policy. On a machine without Linux and nftables in the pinned version, it ends INCOMPLETE (exit code 3): the fast reader ran and found nothing wrong, but the authority, which proves it, couldn't. That's expected on a laptop. To prove it, run it in Linux as root, with nftables in the version in [runtime-versions.yaml](runtime-versions.yaml) (WSL with Ubuntu 24.04 works): `sudo npm run verify` must pass, and `sudo npm run test:authority` shows that real nftables catches what the reader would miss.
 2. **Read** [README.md](README.md), [standards.md](standards.md), [findings.md](findings.md) and [agents/README.md](agents/README.md), and the central [agent rules of engagement](../enterprise-architecture/agents/README.md).
 3. **Report** what you checked and found, then ask what they'd like to change.
 
