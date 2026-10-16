@@ -41,6 +41,7 @@ runtime:
   sites: [dc1]
   instances-per-site: 1
   peak-vcpu: 2
+  database-connections: 10       # the pool's maximum per instance (DB_POOL_MAX); counted against the cluster's max_connections
   capacity:
     peak-requests-per-second: 5
     instance-requests-per-second: 50

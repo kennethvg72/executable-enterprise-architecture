@@ -27,8 +27,8 @@ function rules(flows: Flow[], direction: 'saddr' | 'daddr', service?: Service): 
     const own = direction === 'saddr' ? f.to.addresses : f.from.addresses;
     const local = service?.vips ? `ip ${direction === 'saddr' ? 'daddr' : 'saddr'} ${set(own)} ` : '';
     const match = (peer.includes(ANY) ? `ip ${direction} != ${NATAX_SPACE} ` : `ip ${direction} ${set(peer)} `) + local;
-    const key = `${match}${f.port}`;
-    if (!seen.has(key)) seen.set(key, `    ${match}tcp dport ${f.port} accept ${comment(f.purpose)}`);
+    const key = `${match}${f.protocol ?? 'tcp'}${f.port}`;
+    if (!seen.has(key)) seen.set(key, `    ${match}${f.protocol ?? 'tcp'} dport ${f.port} accept ${comment(f.purpose)}`);
   }
   return [...seen.values()];
 }
@@ -42,7 +42,12 @@ function vrrp(service: Service, direction: 'saddr' | 'daddr'): string[] {
   });
 }
 
-export function renderHostRuleset(service: Service, policy: Policy): string {
+/**
+ * ICMP: replies and errors for existing connections are "related" and pass with them. New ICMP is
+ * only an echo request from the hosts that monitor (observability) and administer (PAWs); nothing
+ * else, so ICMP isn't a channel between hosts that have no declared flow (ZTN-03).
+ */
+export function renderHostRuleset(service: Service, policy: Policy, pingers: string[] = []): string {
   const inbound = policy.flows.filter((f) => f.to.kind === 'service' && f.to.id === service.id);
   const outbound = policy.flows.filter((f) => f.from.kind === 'service' && f.from.id === service.id);
   return [
@@ -56,7 +61,7 @@ export function renderHostRuleset(service: Service, policy: Policy): string {
     '    ct state established,related accept',
     '    ct state invalid drop',
     '    iif lo accept',
-    '    ip protocol icmp icmp type { echo-request, destination-unreachable, time-exceeded } accept',
+    ...(pingers.length ? [`    ip saddr ${set(pingers)} ip protocol icmp icmp type echo-request accept comment "Monitoring and administration may ping (ZTN-03)"`] : []),
     ...rules(inbound, 'saddr', service),
     ...vrrp(service, 'saddr'),
     '    limit rate 10/second log prefix "natax-drop-in "   # then the policy drops it',
@@ -66,7 +71,7 @@ export function renderHostRuleset(service: Service, policy: Policy): string {
     '    type filter hook output priority filter; policy drop;',
     '    ct state established,related accept',
     '    oif lo accept',
-    '    ip protocol icmp accept',
+    ...(service.id === 'observability' ? ['    ip daddr 10.0.0.0/8 ip protocol icmp icmp type echo-request accept comment "Monitoring pings production hosts"'] : []),
     ...rules(outbound, 'daddr'),
     ...vrrp(service, 'daddr'),
     '    limit rate 10/second log prefix "natax-drop-out "',
@@ -87,14 +92,14 @@ export function renderHqRouter(model: Model, policy: Policy): string {
   const lines: string[] = [];
   const byTransit = sites['hq']?.transit ? transitFlows(model, policy) : [];
   for (const t of byTransit) {
-    lines.push(`    ip saddr ${set(t.from)} ip daddr ${set(t.to)} tcp dport ${t.port} accept ${comment(`transit: ${t.purpose}`)}`);
+    lines.push(`    ip saddr ${set(t.from)} ip daddr ${set(t.to)} ${t.protocol ?? 'tcp'} dport ${t.port} accept ${comment(`transit: ${t.purpose}`)}`);
   }
   const local: string[] = [];
   for (const f of policy.flows) {
     const fromHq = f.from.addresses.filter((a) => siteOf(a, sites) === 'hq' || isHqZone(model, a));
     const toHq = f.to.addresses.filter((a) => siteOf(a, sites) === 'hq');
-    if (fromHq.length) local.push(`    ip saddr ${set(fromHq)} ip daddr ${set(f.to.addresses.filter((a) => siteOf(a, sites) !== 'hq'))} tcp dport ${f.port} accept ${comment(f.purpose)}`);
-    if (toHq.length) local.push(`    ip saddr ${set(f.from.addresses.filter((a) => siteOf(a, sites) !== 'hq'))} ip daddr ${set(toHq)} tcp dport ${f.port} accept ${comment(f.purpose)}`);
+    if (fromHq.length) local.push(`    ip saddr ${set(fromHq)} ip daddr ${set(f.to.addresses.filter((a) => siteOf(a, sites) !== 'hq'))} ${f.protocol ?? 'tcp'} dport ${f.port} accept ${comment(f.purpose)}`);
+    if (toHq.length) local.push(`    ip saddr ${set(f.from.addresses.filter((a) => siteOf(a, sites) !== 'hq'))} ip daddr ${set(toHq)} ${f.protocol ?? 'tcp'} dport ${f.port} accept ${comment(f.purpose)}`);
   }
   return [
     HEADER,
@@ -123,7 +128,7 @@ function isHqZone(model: Model, cidr: string): boolean {
   return cidr.includes('/') && within(cidr, model.landscape.sites['hq']!.prefix);
 }
 
-export interface TransitRule { from: string[]; to: string[]; port: number; purpose: string }
+export interface TransitRule { from: string[]; to: string[]; port: number; protocol?: 'tcp' | 'udp'; purpose: string }
 
 /** Every declared flow between the two datacenters, as the HQ router must forward it. */
 export function transitFlows(model: Model, policy: Policy): TransitRule[] {
@@ -134,7 +139,7 @@ export function transitFlows(model: Model, policy: Policy): TransitRule[] {
     for (const [a, b] of [['dc1', 'dc2'], ['dc2', 'dc1']] as const) {
       const from = f.from.addresses.filter((x) => siteOf(x, sites) === a);
       const to = f.to.addresses.filter((x) => siteOf(x, sites) === b);
-      if (from.length && to.length) out.push({ from, to, port: f.port, purpose: f.purpose });
+      if (from.length && to.length) out.push({ from, to, port: f.port, ...(f.protocol ? { protocol: f.protocol } : {}), purpose: f.purpose });
     }
   }
   return out;
@@ -192,7 +197,8 @@ export function probePlan(model: Model, policy: Policy): Probe[] {
   for (const [z, a] of Object.entries(ZONE_VANTAGE)) if (model.landscape.zones[z]) vantage.push({ address: a, label: `zone:${z}` });
 
   const targets: { address: string; label: string; ports: Set<number> }[] = [];
-  const platformPorts = (model.landscape['platform-flows'] ?? []).filter((p) => p.to === 'all-production').map((p) => p.port);
+  // Probes are TCP connection attempts; UDP flows (DNS, NTP) are verified on the rules instead.
+  const platformPorts = (model.landscape['platform-flows'] ?? []).filter((p) => p.to === 'all-production' && (p.protocol ?? 'tcp') === 'tcp').map((p) => p.port);
   // Load balancers listen on the frontend ports of everything published through them.
   const frontends = new Map<string, number[]>();
   for (const s of model.services.values()) {

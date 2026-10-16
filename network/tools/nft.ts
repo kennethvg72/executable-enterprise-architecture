@@ -1,79 +1,122 @@
-// Reads generated nftables rulesets back, and answers "would these rules let this TCP connection
+// Reads generated nftables rulesets back, and answers "would these rules let this connection
 // through?" (DEL-06). It doesn't use the policy the rules were compiled from: it only reads the
 // text, so a bug in the renderer shows up as a difference between intent and output.
 //
-// It understands exactly the statements NATAX's rulesets use, and refuses anything else. A
-// ruleset it can't fully read is never assumed to be correct.
+// It is a fast reader, not the authority. The authority loads the rules into real nftables in a
+// network namespace and sends traffic (authority.ts). This reader may only fail early: when it
+// finds nothing wrong, the result still needs the authority before it counts.
+//
+// Its grammar is an explicit allowlist: exactly the statements NATAX's renderer produces, with
+// every address and port validated. Anything else is refused, including statements that are
+// perfectly valid nftables ("ct state new accept", "tcp dport { 1-65535 }", "meta l4proto tcp"):
+// a reader that skips what it doesn't model certifies open firewalls as closed.
 
 import { within } from '../../enterprise-architecture/tools/lib/net.ts';
 
 interface AddressMatch { negate: boolean; cidrs: string[] }
 
+export type Protocol = 'tcp' | 'udp' | 'icmp' | 'vrrp';
+
 export interface NftRule {
   saddr?: AddressMatch;
   daddr?: AddressMatch;
-  ports?: number[];
-  /** tcp: the rule matches TCP (with or without a port); other: ICMP, VRRP and the like; any: every protocol. */
-  protocol: 'tcp' | 'other' | 'any';
-  /** For "other": which protocol (icmp, vrrp, udp, ...). */
-  protocolName?: string;
-  verdict: 'accept' | 'drop';
+  protocol: Protocol;
+  /** tcp and udp: the one destination port. */
+  port?: number;
+  /** icmp: the accepted types. */
+  icmpTypes?: string[];
+  verdict: 'accept';
   line: string;
 }
 
 export interface NftChain { hook: string; policy: 'accept' | 'drop'; rules: NftRule[] }
 
-/** The chains of one ruleset, by hook (input, output, forward). Throws on anything it doesn't understand. */
+const OCTET = String.raw`(?:25[0-5]|2[0-4]\d|1\d\d|[1-9]?\d)`;
+const ADDRESS = String.raw`${OCTET}\.${OCTET}\.${OCTET}\.${OCTET}(?:\/(?:3[0-2]|[12]?\d))?`;
+const ADDRESSES = String.raw`(?:${ADDRESS}|\{ ${ADDRESS}(?:, ${ADDRESS})* \})`;
+const MATCH = (field: 'saddr' | 'daddr') => String.raw`ip ${field} (!= )?(${ADDRESSES}) `;
+const ICMP_TYPES = new Set(['echo-request', 'destination-unreachable', 'time-exceeded']);
+
+/** Every statement the renderer may produce, as a full-line pattern. Nothing else is read. */
+const STATEMENTS: { re: RegExp; read?: (m: RegExpExecArray, line: string) => NftRule }[] = [
+  // State tracking and loopback: never accept a new connection from another host.
+  { re: /^ct state established,related accept$/ },
+  { re: /^ct state invalid drop$/ },
+  { re: /^(?:iif|oif) lo accept$/ },
+  { re: /^limit rate \d+\/second log prefix "natax-[a-z-]+ "$/ },
+  // A TCP or UDP flow: optional source, optional destination, exactly one port.
+  {
+    re: new RegExp(String.raw`^(?:${MATCH('saddr')})?(?:${MATCH('daddr')})?(tcp|udp) dport ([1-9]\d{0,4}) accept$`),
+    read: (m, line) => {
+      const port = Number(m[6]);
+      if (port > 65535) throw new Error(`Port out of range: ${line}`);
+      return { ...addresses(m[1], m[2], m[3], m[4]), protocol: m[5] as 'tcp' | 'udp', port, verdict: 'accept', line };
+    },
+  },
+  // ICMP, by type, optionally limited by source and destination.
+  {
+    re: new RegExp(String.raw`^(?:${MATCH('saddr')})?(?:${MATCH('daddr')})?ip protocol icmp icmp type (\{ [a-z-]+(?:, [a-z-]+)* \}|[a-z-]+) accept$`),
+    read: (m, line) => {
+      const types = m[5]!.replace(/[{}]/g, '').split(',').map((t) => t.trim());
+      const unknown = types.filter((t) => !ICMP_TYPES.has(t));
+      if (unknown.length) throw new Error(`ICMP type not in the grammar (${unknown.join(', ')}): ${line}`);
+      return { ...addresses(m[1], m[2], m[3], m[4]), protocol: 'icmp', icmpTypes: types, verdict: 'accept', line };
+    },
+  },
+  // VRRP between the two load balancers of a pair.
+  {
+    re: new RegExp(String.raw`^${MATCH('saddr').replace('saddr', '(saddr|daddr)')}ip protocol vrrp accept$`),
+    read: (m, line) => ({ [m[1] as 'saddr' | 'daddr']: { negate: !!m[2], cidrs: list(m[3]!) }, protocol: 'vrrp', verdict: 'accept', line }),
+  },
+];
+
+const list = (text: string) => text.replace(/[{}]/g, '').split(',').map((s) => s.trim()).filter(Boolean);
+
+function addresses(sNeg?: string, s?: string, dNeg?: string, d?: string): Pick<NftRule, 'saddr' | 'daddr'> {
+  return {
+    ...(s ? { saddr: { negate: !!sNeg, cidrs: list(s) } } : {}),
+    ...(d ? { daddr: { negate: !!dNeg, cidrs: list(d) } } : {}),
+  };
+}
+
+/** The chains of one ruleset, by hook (input, output, forward). Throws on anything outside the grammar. */
 export function parseRuleset(text: string): Map<string, NftChain> {
   const chains = new Map<string, NftChain>();
   let current: NftChain | undefined;
+  let depth = 0;
   for (const raw of text.split('\n')) {
-    const line = raw.replace(/comment "[^"]*"/, '').replace(/#.*$/, '').trim();
-    if (!line || line === '}' || /^table inet [\w-]+ \{$/.test(line) || /^chain \w+ \{$/.test(line)) continue;
-    const head = /^type filter hook (\w+) priority filter; policy (accept|drop);$/.exec(line);
-    if (head) { current = { hook: head[1]!, policy: head[2] as 'accept' | 'drop', rules: [] }; chains.set(current.hook, current); continue; }
-    if (!current) throw new Error(`Statement outside a chain: ${raw.trim()}`);
-    // Statements that never accept a new TCP connection: state tracking, loopback, logging.
-    if (/^ct state [\w,]+ (accept|drop)$/.test(line) || /^(iif|oif) lo accept$/.test(line) || /^limit rate \d+\/\w+ log prefix "[^"]*"$/.test(line)) continue;
-    current.rules.push(parseRule(line, raw.trim()));
-  }
-  return chains;
-}
-
-function parseRule(line: string, original: string): NftRule {
-  const rule: NftRule = { protocol: 'any', verdict: 'accept', line: original };
-  let rest = line;
-  const take = (re: RegExp) => { const m = re.exec(rest); if (m) rest = rest.slice(m[0].length).trim(); return m; };
-  const set = (text: string) => text.startsWith('{') ? text.slice(1, -1).split(',').map((s) => s.trim()).filter(Boolean) : [text];
-  for (;;) {
-    let m;
-    if ((m = take(/^ip (saddr|daddr) (!= )?(\{[^}]*\}|[\d./]+)/))) {
-      rule[m[1] as 'saddr' | 'daddr'] = { negate: !!m[2], cidrs: set(m[3]!) };
-    } else if ((m = take(/^tcp dport (\{[^}]*\}|\d+)/))) {
-      rule.protocol = 'tcp';
-      rule.ports = set(m[1]!).map(Number);
-    } else if ((m = take(/^ip protocol (\w+)( icmp type \{[^}]*\})?/))) {
-      rule.protocol = m[1] === 'tcp' ? 'tcp' : 'other';
-      if (rule.protocol === 'other') rule.protocolName = m[1];
-    } else if ((m = take(/^(accept|drop)$/))) {
-      rule.verdict = m[1] as 'accept' | 'drop';
-      return rule;
-    } else {
-      throw new Error(`Unrecognized nftables statement: ${original}`);
+    // Comments: a whole-line comment, or the comment "..." the renderer puts at the end of a rule.
+    const line = raw.trim().startsWith('#') ? '' : raw.replace(/\s+comment "[^"\\]*"\s*$/, '').replace(/\s+# [^"]*$/, '').trim();
+    if (!line) continue;
+    if (/^table inet [a-z-]+ \{$/.test(line)) { if (depth !== 0) throw new Error(`Nested table: ${raw.trim()}`); depth = 1; continue; }
+    if (/^chain (?:input|output|forward) \{$/.test(line)) { if (depth !== 1) throw new Error(`Chain outside a table: ${raw.trim()}`); depth = 2; current = undefined; continue; }
+    if (line === '}') { depth--; if (depth < 0) throw new Error('Unbalanced braces.'); if (depth < 2) current = undefined; continue; }
+    const head = /^type filter hook (input|output|forward) priority filter; policy (accept|drop);$/.exec(line);
+    if (head) {
+      if (depth !== 2 || current) throw new Error(`Chain header out of place: ${raw.trim()}`);
+      if (chains.has(head[1]!)) throw new Error(`Second ${head[1]} chain: rules in it would be evaluated too.`);
+      current = { hook: head[1]!, policy: head[2] as 'accept' | 'drop', rules: [] };
+      chains.set(current.hook, current);
+      continue;
     }
+    if (!current) throw new Error(`Statement outside a chain: ${raw.trim()}`);
+    const statement = STATEMENTS.map((s) => ({ s, m: s.re.exec(line) })).find((x) => x.m);
+    if (!statement) throw new Error(`Not in the reader's grammar, so not trusted: ${raw.trim()}`);
+    if (statement.s.read) current.rules.push(statement.s.read(statement.m!, raw.trim()));
   }
+  if (depth !== 0) throw new Error('Unbalanced braces.');
+  return chains;
 }
 
 const matches = (m: AddressMatch | undefined, address: string) =>
   !m || m.cidrs.some((c) => within(address, c)) !== m.negate;
 
-/** Does this chain let a new TCP connection from src to dst on port through? */
-export function chainAccepts(chain: NftChain, src: string, dst: string, port: number): boolean {
+/** Does this chain let a new connection from src to dst on port through? */
+export function chainAccepts(chain: NftChain, src: string, dst: string, port: number, protocol: 'tcp' | 'udp' = 'tcp'): boolean {
   for (const r of chain.rules) {
-    if (r.protocol === 'other') continue;
-    if (r.ports && !r.ports.includes(port)) continue;
+    if (r.protocol !== protocol || r.port !== port) continue;
     if (!matches(r.saddr, src) || !matches(r.daddr, dst)) continue;
-    return r.verdict === 'accept';
+    return true;
   }
   return chain.policy === 'accept';
 }
@@ -81,9 +124,9 @@ export function chainAccepts(chain: NftChain, src: string, dst: string, port: nu
 /** The rulesets of every host, by address. A host without a ruleset (a zone, an appliance) filters nothing itself. */
 export type HostRules = Map<string, Map<string, NftChain>>;
 
-/** Would the generated rules let a new TCP connection from src to dst on port through, on both ends? */
-export function rulesAllow(hosts: HostRules, src: string, dst: string, port: number): boolean {
+/** Would the generated rules let a new connection from src to dst on port through, on both ends? */
+export function rulesAllow(hosts: HostRules, src: string, dst: string, port: number, protocol: 'tcp' | 'udp' = 'tcp'): boolean {
   const out = hosts.get(src)?.get('output');
   const inp = hosts.get(dst)?.get('input');
-  return (!out || chainAccepts(out, src, dst, port)) && (!inp || chainAccepts(inp, src, dst, port));
+  return (!out || chainAccepts(out, src, dst, port, protocol)) && (!inp || chainAccepts(inp, src, dst, port, protocol));
 }

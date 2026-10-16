@@ -31,6 +31,15 @@ export function checkDependencies(appDir: string, root = REPO_ROOT): Result[] {
     : [];
 
   const results: Result[] = [];
+  // Overrides and resolutions replace what transitive dependencies resolve to, behind every other
+  // check: each is pinned, and has its own reason, even for an approved package (SEC-05).
+  for (const [name, version] of Object.entries(technology === 'android' ? {} : npmOverrides(appDir))) {
+    if (!/^\d+\.\d+\.\d+$/.test(version)) results.push(fail('SEC-05', `The override for ${name} isn't pinned to an exact version ("${version}").`, 'Pin it to an exact version.'));
+    const decision = decisions.find((d) => sectionMentions(d.text, 'Dependencies', name));
+    results.push(decision
+      ? pass('SEC-05', `Override ${name}: reason recorded in docs/decisions/${decision.file}.`)
+      : fail('SEC-05', `The override for ${name} has no recorded reason.`, `Remove it, or record why in a decision record whose "Dependencies" section names ${name}.`));
+  }
   for (const [name, version] of Object.entries(deps)) {
     // Exactly x.y.z, nothing before or after: "8.23.1 || *" is a range that allows anything.
     if (version !== undefined && !/^\d+\.\d+\.\d+$/.test(version)) {
@@ -46,6 +55,24 @@ export function checkDependencies(appDir: string, root = REPO_ROOT): Result[] {
       : fail('SIM-01', `${name} has no recorded reason.`, `Remove it, or record why the simpler alternative isn't enough in a decision record whose "Dependencies" section names ${name}.`));
   }
   return results.length ? results : [pass('SIM-01', 'No dependencies.')];
+}
+
+/** npm's overrides (nested ones flattened), Yarn's resolutions and pnpm's overrides, by package name. */
+export function npmOverrides(appDir: string): Record<string, string> {
+  const path = join(appDir, 'package.json');
+  if (!existsSync(path)) return {};
+  const pkg = JSON.parse(readFileSync(path, 'utf8')) as { overrides?: unknown; resolutions?: unknown; pnpm?: { overrides?: unknown } };
+  const out: Record<string, string> = {};
+  const flatten = (o: unknown) => {
+    if (typeof o !== 'object' || o === null) return;
+    for (const [k, v] of Object.entries(o)) {
+      const name = k.replace(/^.*>/, '').replace(/(.)@[^/]*$/, '$1');
+      if (typeof v === 'string') out[name || k] = v; else { if (typeof (v as Record<string, unknown>)['.'] === 'string') out[name] = (v as Record<string, string>)['.']!; flatten(v); }
+    }
+  };
+  flatten(pkg.overrides); flatten(pkg.resolutions); flatten(pkg.pnpm?.overrides);
+  delete out['.'];
+  return out;
 }
 
 function npmDependencies(appDir: string): Record<string, string> | undefined {

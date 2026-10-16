@@ -1,0 +1,11 @@
+# The AI models the central agents run on (AGT-11). A gate input (SEC-14): changing it takes
+# signatures from the Board and Central IT, and the regression set must pass with the new model
+# first. Exact versions only: a model that changes underneath the pipeline changes the gate.
+
+governance-agent:
+  provider: <the Board-accepted provider>
+  model: <exact model version>
+security-agent:
+  provider: <a different provider from the Governance Agent's (AGT-03)>
+  model: <exact model version>
+regression-set: enterprise-architecture/pipeline/regression/   # past candidates with known verdicts

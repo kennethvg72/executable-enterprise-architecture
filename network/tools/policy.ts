@@ -15,6 +15,8 @@ export interface Flow {
   from: Endpoint;
   to: Endpoint;
   port: number;
+  /** tcp unless said otherwise. */
+  protocol?: 'tcp' | 'udp';
   purpose: string;
   declaredIn: string;
 }
@@ -66,6 +68,12 @@ export function compilePolicy(model: Model): Policy {
     flows.push({ from: sources(lb), to: instancesOf(provider), port: p.port, purpose, declaredIn: provider.source });
     if (p.health && p.health.port !== p.port) {
       flows.push({ from: sources(lb), to: instancesOf(provider), port: p.health.port, purpose: `${lb.id} checks ${provider.id} ${p.health.path}`, declaredIn: provider.source });
+    }
+    // The global DNS monitors check each site's own instances directly, not through the VIP,
+    // where the other datacenter's backup servers would answer for a dead site (RES-02).
+    const edge = services.get('edge-adc');
+    if (p.health && lb.id === 'platform-lb' && provider.kind !== 'database-cluster' && edge) {
+      flows.push({ from: { kind: 'service', id: edge.id, addresses: edge.instances.map((i) => i.address) }, to: instancesOf(provider), port: p.health.port, purpose: `Global DNS monitor checks ${provider.id} ${p.health.path}`, declaredIn: provider.source });
     }
   };
 
@@ -173,7 +181,7 @@ export function compilePolicy(model: Model): Policy {
     for (const from of froms) {
       for (const to of tos) {
         if (from.kind === 'service' && from.id === to.id) continue;
-        flows.push({ from, to, port: pf.port, purpose: pf.purpose, declaredIn: 'enterprise-architecture/landscape/landscape.yaml (platform-flows)' });
+        flows.push({ from, to, port: pf.port, ...(pf.protocol === 'udp' ? { protocol: 'udp' as const } : {}), purpose: pf.purpose, declaredIn: 'enterprise-architecture/landscape/landscape.yaml (platform-flows)' });
       }
     }
   }
@@ -191,9 +199,9 @@ export function compilePolicy(model: Model): Policy {
 }
 
 /** Is a connection from `src` to `dst` on `port` allowed by the policy? */
-export function isAllowed(policy: Policy, src: string, dst: string, port: number): Flow | undefined {
+export function isAllowed(policy: Policy, src: string, dst: string, port: number, protocol: 'tcp' | 'udp' = 'tcp'): Flow | undefined {
   return policy.flows.find((f) =>
-    f.port === port &&
+    f.port === port && (f.protocol ?? 'tcp') === protocol &&
     f.from.addresses.some((a) => isPeer(src, a)) &&
     f.to.addresses.some((a) => isPeer(dst, a)));
 }

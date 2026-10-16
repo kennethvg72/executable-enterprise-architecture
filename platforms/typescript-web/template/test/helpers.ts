@@ -20,6 +20,14 @@ export function testDatabaseUrl(): string {
 export async function resetDatabase(): Promise<void> {
   const client = new pg.Client({ connectionString: testDatabaseUrl() });
   await client.connect();
+  // A superuser passes every permission check, so tests run as one would hide every grant that's
+  // missing or too wide. The development role (BOOTSTRAP, step 3) can create databases and roles,
+  // and nothing more.
+  const { rows } = await client.query<{ rolsuper: boolean }>('SELECT rolsuper FROM pg_roles WHERE rolname = current_user');
+  if (rows[0]?.rolsuper) {
+    await client.end();
+    throw new Error('TEST_DATABASE_URL connects as a superuser. Use the development role (CREATEDB CREATEROLE, not SUPERUSER), so missing grants fail the tests.');
+  }
   await client.query('DROP SCHEMA public CASCADE; CREATE SCHEMA public;');
   await client.end();
   await migrate(testDatabaseUrl());

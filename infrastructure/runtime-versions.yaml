@@ -1,0 +1,12 @@
+# The versions of the software that runs this architecture in production (DEL-06). The authority
+# checks run with exactly these major.minor versions, check them before they start, and record the
+# exact versions in the verdict: HAProxy's defaults and Patroni's settings have changed between
+# versions, and a check run with another version proves nothing about production. Changing a
+# version is a release of this architecture.
+
+haproxy: "2.8"
+keepalived: "2.2"
+patroni: "3.2"
+etcd: "3.4"
+pgbackrest: "2.50"
+postgresql: "18"

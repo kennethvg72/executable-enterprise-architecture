@@ -6,7 +6,8 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appArgs, loadModel, withApplications } from '../../enterprise-architecture/tools/lib/load.ts';
 import type { Model } from '../../enterprise-architecture/tools/lib/model.ts';
-import { fail, pass, report, warn, type Result } from '../../enterprise-architecture/tools/lib/report.ts';
+import { fail, pass, report, tiered, warn, type Result } from '../../enterprise-architecture/tools/lib/report.ts';
+import { infrastructureAuthority } from './authority.ts';
 import { GENERATED, renderAll, renderEdgeSpec, renderHaproxy } from './render.ts';
 import { checkGeneratedConfig } from './check-output.ts';
 import { simulate } from './simulate.ts';
@@ -60,6 +61,29 @@ export function checkLoadBalancers(model: Model): Result[] {
         results.push(fail('RES-06', `${s.id} is published at the edge without a readiness check.`, 'Declare health { path: /health/ready }.'));
       }
     }
+  }
+  return results;
+}
+
+/** Connections PostgreSQL keeps for itself and for people: superusers, replication, administration. */
+export const RESERVED_CONNECTIONS = 3 + 5 + 10;
+
+/**
+ * INF-05: every consumer's pool, on every instance, plus one readiness connection and one for
+ * migrations per consumer, plus the reserve, fits within max_connections. Otherwise one burst of
+ * "too many clients" makes readiness fail on healthy instances, and the whole fleet is withdrawn.
+ */
+export function checkConnectionBudget(model: Model): Result[] {
+  const results: Result[] = [];
+  for (const db of [...model.services.values()].filter((s) => s.kind === 'database-cluster')) {
+    const max = db['max-connections'];
+    if (!max) { results.push(fail('RES-08', `${db.id} declares no max-connections, so its connection budget can't be checked.`, 'Declare max-connections in the landscape.')); continue; }
+    const users = [...model.services.values()].filter((s) => (s.consumes ?? []).some((c) => c.service === db.id && c.interface === 'postgres'));
+    const parts = users.map((u) => ({ id: u.id, n: u.instances.length * ((u['database-connections'] ?? 10) + 1) + 1 }));
+    const needed = parts.reduce((sum, x) => sum + x.n, 0) + RESERVED_CONNECTIONS;
+    results.push(needed <= max
+      ? pass('RES-08', `${db.id}: ${needed} of ${max} connections at most (${parts.map((x) => `${x.id} ${x.n}`).join(', ') || 'no consumers'}, reserve ${RESERVED_CONNECTIONS}).`)
+      : fail('RES-08', `${db.id}: consumers may open ${needed} connections, but max_connections is ${max}: ${parts.map((x) => `${x.id} ${x.n}`).join(', ')}.`, 'Lower the pools (database-connections), or raise max-connections with the database team.'));
   }
   return results;
 }
@@ -189,11 +213,13 @@ export function verifyInfrastructure(model = loadModel(), { drift = true } = {})
   return [
     ...checkLoadBalancers(model),
     ...checkDatabases(model),
+    ...checkConnectionBudget(model),
     ...checkPlacement(model),
     ...checkCapacity(model),
     ...checkTopology(model),
     // DEL-06: the configuration itself, read back, not the intent it was rendered from.
-    ...checkGeneratedConfig(model, generatedFiles(model, drift)),
+    ...tiered('reader', checkGeneratedConfig(model, generatedFiles(model, drift))),
+    ...infrastructureAuthority(model, generatedFiles(model, drift)),
     ...(drift ? checkDrift(model) : []),
   ];
 }

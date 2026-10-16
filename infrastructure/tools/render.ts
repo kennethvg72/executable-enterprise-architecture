@@ -28,11 +28,25 @@ export function publishedVia(model: Model, lb: string): Published[] {
   return out.sort((a, b) => a.service.id.localeCompare(b.service.id));
 }
 
-/** The edge appliances' own addresses: the source of their health monitors. */
-const edgeNodes = (model: Model) => {
-  const edge = model.services.get('edge-adc');
-  return [...(edge?.instances ?? []), ...(edge?.egress ?? [])].map((i) => i.address);
-};
+/** Per source of traffic (a zone or a service): the hostnames it may ask the shared frontend for. */
+function hostLimits(model: Model, apps: Service[]): string[] {
+  const allowed = new Map<string, { addresses: string[]; hosts: string[] }>();
+  for (const app of apps) {
+    for (const provide of (app.provides ?? []).filter((x) => x.via === 'platform-lb')) {
+      for (const consumer of Array.isArray(provide.consumers) ? provide.consumers : []) {
+        const zone = consumer.startsWith('zone:') ? model.landscape.zones[consumer.slice(5)] : undefined;
+        const svc = zone ? undefined : model.services.get(consumer);
+        const addresses = zone ? zone.cidrs : (svc?.egress ?? svc?.instances ?? []).map((i) => i.address);
+        if (!addresses.length) continue;
+        const entry = allowed.get(consumer) ?? { addresses, hosts: [] };
+        entry.hosts.push(`${app.id}.${DOMAIN}`);
+        allowed.set(consumer, entry);
+      }
+    }
+  }
+  return [...allowed].sort(([a], [b]) => a.localeCompare(b)).map(([, e]) =>
+    `  http-request deny deny_status 403 if { src ${[...new Set(e.addresses)].sort().join(' ')} } !{ req.hdr(host),field(1,:) -i ${[...new Set(e.hosts)].sort().join(' ')} }`);
+}
 
 const vipOf = (model: Model, lb: string, site: string) =>
   model.services.get(lb)!.vips!.find((v) => v.site === site)!.address;
@@ -76,10 +90,14 @@ export function renderHaproxy(model: Model, site: string): string {
     `  bind ${vip}:443 ssl crt /etc/haproxy/certs/ alpn h2,http/1.1`,
     '  option forwardfor',
     '  # Health endpoints answer the load balancers, not clients: a flood of readiness calls',
-    '  # from users must not become the overload. The backend checks go straight to the',
-    '  # servers; only the edge appliances\' global DNS monitor comes through here (RES-06, RES-08).',
-    `  http-request deny deny_status 404 if { path_beg /health/ } !{ src ${edgeNodes(model).join(' ')} }`,
-    '  # Overload protection: reject quickly rather than queue (RES-08).',
+    '  # from users must not become the overload. Every health check, including the global DNS',
+    '  # monitors, goes straight to the instances (RES-06, RES-08).',
+    '  http-request deny deny_status 404 if { path_beg /health/ }',
+    '  # One address serves every application, routed by Host. Each source may only name the',
+    '  # applications that list it as a consumer; the network can\'t tell them apart (SEC-02).',
+    ...hostLimits(model, apps.map((p) => p.service)),
+    '  # Overload: answer 503 at once rather than leave connections waiting in a queue (RES-08).',
+    '  http-request return status 503 content-type text/plain string "Busy, please retry" if { fe_conn gt 4500 }',
     '  maxconn 5000',
     ...apps.map((p) => `  use_backend ${p.service.id} if { req.hdr(host),field(1,:) -i ${p.service.id}.${DOMAIN} }`),
     '  default_backend unknown-application',
@@ -140,9 +158,12 @@ function dcsSettings(cluster: Service): string[] {
     'postgresql:',
     '  use_pg_rewind: true',
     '  parameters:',
+    `    max_connections: ${cluster['max-connections'] ?? 300}            # every consumer's pool fits, with a reserve (INF-05)`,
     '    synchronous_commit: "on"',
     '    ssl: "on"',
     '    ssl_min_protocol_version: TLSv1.3',
+    '    archive_mode: "on"',
+    `    archive_command: "pgbackrest --stanza=${cluster.id} archive-push %p"   # to both datacenters (backup-store, DAT-08)`,
   ];
 }
 
@@ -156,8 +177,9 @@ export function renderPatroniDcs(cluster: Service): string {
   return [
     HEADER,
     `# Dynamic configuration of ${cluster.id}, applied to the running cluster by the deployment process:`,
-    `#   patronictl -c /etc/patroni/patroni.yml edit-config --replace patroni/${cluster.id}.dcs.yml --force`,
-    '# Drift detection compares it daily with GET /config on the leader (DEL-04).',
+    '# merged into what the cluster has, so settings Patroni keeps for itself survive:',
+    `#   patronictl -c /etc/patroni/patroni.yml edit-config --apply patroni/${cluster.id}.dcs.yml --force`,
+    '# After applying, and daily, GET /config on the leader must show these values (check-patroni-config.ts).',
     ...dcsSettings(cluster),
     '',
   ].join('\n');
@@ -176,10 +198,13 @@ export function renderPatroni(model: Model, cluster: Service): string {
     '  protocol: https',
     `  hosts: [${etcd.instances.map((i) => `${i.address}:${client}`).join(', ')}]   # one voting member per site (RES-04)`,
     '  cacert: /etc/patroni/natax-workload-ca.pem',
-    `  # The certificate's name is the cluster's etcd user, which may touch only /service/${cluster.id}/`,
-    '  # (etcd/rbac.yaml): another cluster sharing the quorum can\'t take its leader lock (SEC-09).',
     `  cert: /etc/patroni/patroni-${cluster.id}.pem`,
     `  key: /etc/patroni/patroni-${cluster.id}.key`,
+    '  # Its own etcd user, which may touch only its own keys (etcd/rbac.yaml): another cluster sharing',
+    '  # the quorum can\'t take its leader lock (SEC-09). Password authentication, because etcd ignores',
+    '  # certificate names on the gateway Patroni talks to. The password comes from the secret store',
+    '  # at deployment (PATRONI_ETCD3_PASSWORD), never from this file.',
+    `  username: patroni-${cluster.id}`,
     'bootstrap:',
     `  dcs:                               # used only when the cluster is first created; afterwards patroni/${cluster.id}.dcs.yml`,
     ...dcsSettings(cluster).map((l) => `    ${l}`),
@@ -194,6 +219,34 @@ export function renderPatroni(model: Model, cluster: Service): string {
 }
 
 /**
+ * pgBackRest for one cluster: WAL and backups go to the repositories in both datacenters, so the
+ * surviving datacenter keeps archiving when the other is lost. If a repository can't be reached,
+ * the queue limit stops WAL piling up until the primary's disk is full: archiving falls behind
+ * (an alert, and point-in-time recovery has a gap) instead of the database stopping (DAT-08).
+ */
+export function renderPgBackRest(model: Model, cluster: Service): string {
+  const repos = model.services.get('backup-store')?.instances ?? [];
+  return [
+    HEADER,
+    `# pgBackRest for ${cluster.id} (DAT-08).`,
+    '[global]',
+    ...repos.flatMap((r, n) => [
+      `# backup-store in ${r.site}`,
+      `repo${n + 1}-host=${r.address}`,
+      `repo${n + 1}-host-type=tls`,
+      `repo${n + 1}-retention-full=4`,
+    ]),
+    'archive-async=y',
+    '# Never fill the primary\'s disk waiting for a repository.',
+    'archive-push-queue-max=4GiB',
+    '',
+    `[${cluster.id}]`,
+    'pg1-path=/var/lib/postgresql/18/main',
+    '',
+  ].join('\n');
+}
+
+/**
  * etcd's access control: every Patroni cluster sharing the quorum has its own user, named after
  * its client certificate, with access to its own keys only (SEC-09). Applied by the deployment
  * process with etcdctl (role add, role grant-permission --prefix, user add --no-password).
@@ -202,11 +255,15 @@ export function renderEtcdRbac(model: Model): string {
   const clusters = [...model.services.values()].filter((c) => c.kind === 'database-cluster' && c.replication);
   return [
     HEADER,
-    '# etcd access control for the Patroni clusters that share the quorum (SEC-09).',
-    'auth: enabled                      # with --client-cert-auth: a client certificate\'s name is its user',
+    '# etcd access control for the Patroni clusters that share the quorum (SEC-09). Enabling auth',
+    '# needs the root user first; its password is in the secret store, used only through a PAW.',
+    'auth: enabled',
+    'authentication: password             # etcd ignores certificate names on its gRPC gateway',
     'roles:',
     ...clusters.flatMap((c) => [`  - role: patroni-${c.id}`, `    readwrite-prefix: /service/${c.id}/`]),
     'users:',
+    '  - user: root',
+    '    roles: [root]',
     ...clusters.flatMap((c) => [`  - user: patroni-${c.id}`, `    roles: [patroni-${c.id}]`]),
     '',
   ].join('\n');
@@ -292,12 +349,15 @@ export function renderEdgeSpec(model: Model): string {
       `  - name: ${service.id}.${DOMAIN}`,
       '    members:',
       ...lb.vips!.map((v) => `      - { site: ${v.site}, address: ${v.address}, port: ${provide['frontend-port'] ?? provide.port} }`),
-      '    monitor:',
-      '      protocol: https',
+      '    monitor:                       # the site\'s own instances, never the VIP: there, the other',
+      '      protocol: https              # datacenter\'s backup servers would answer for a dead site',
       `      host: ${service.id}.${DOMAIN}`,
       `      path: ${provide.health!.path}`,
       '      expect-status: 200',
       '      interval-seconds: 5',
+      '      targets:',
+      ...lb.vips!.flatMap((v) => service.instances.filter((i) => i.site === v.site).map((i) => `        - { site: ${v.site}, address: ${i.address}, port: ${provide.health?.port ?? provide.port} }`)),
+      '      withdraw-site-when: none of its targets is ready',
       '    ttl-seconds: 30',
       '    withdraw-site-after-seconds: 60',
     );
@@ -318,6 +378,7 @@ export function renderAll(model: Model): Map<string, string> {
     if (s.kind === 'database-cluster' && s.replication) {
       files.set(`patroni/${s.id}.yml`, renderPatroni(model, s));
       files.set(`patroni/${s.id}.dcs.yml`, renderPatroniDcs(s));
+      files.set(`pgbackrest/${s.id}.conf`, renderPgBackRest(model, s));
     }
   }
   files.set('etcd/rbac.yaml', renderEtcdRbac(model));

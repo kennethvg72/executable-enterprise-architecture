@@ -64,11 +64,15 @@ internal-global:
     members:
       - { site: dc1, address: 10.1.50.10, port: 443 }
       - { site: dc2, address: 10.2.50.10, port: 443 }
-    monitor:
-      protocol: https
+    monitor:                       # the site's own instances, never the VIP: there, the other
+      protocol: https              # datacenter's backup servers would answer for a dead site
       host: rejection-triage.natax.internal
       path: /health/ready
       expect-status: 200
       interval-seconds: 5
+      targets:
+        - { site: dc1, address: 10.1.20.31, port: 8443 }
+        - { site: dc2, address: 10.2.20.31, port: 8443 }
+      withdraw-site-when: none of its targets is ready
     ttl-seconds: 30
     withdraw-site-after-seconds: 60

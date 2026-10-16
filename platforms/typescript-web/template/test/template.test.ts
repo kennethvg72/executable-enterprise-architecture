@@ -10,6 +10,8 @@ import pg from 'pg';
 import { ROLE_GROUPS, rolesFromClaims } from '../src/roles.ts';
 import { SignJWT, createLocalJWKSet, exportJWK, generateKeyPair } from 'jose';
 import { createHealth } from '../src/health.ts';
+import { html } from '../src/html.ts';
+import { migrationFiles } from '../src/migrate.ts';
 import { resetDatabase, startTestApp, testDatabaseUrl, type TestApp } from './helpers.ts';
 
 describe('configuration (TS-06, TS-07)', () => {
@@ -242,26 +244,47 @@ describe('staff APIs with bearer tokens (AND-05, IAM-04)', () => {
     const jwk = { ...(await exportJWK(publicKey)), kid: 'test', alg: 'RS256' };
     sign = (claims, o = {}) => new SignJWT(claims).setProtectedHeader({ alg: 'RS256', kid: 'test' })
       .setIssuer(o.issuer ?? issuer).setAudience(o.audience ?? audience).setIssuedAt().setExpirationTime(o.expires ?? '5m').sign(privateKey);
-    app = await startTestApp({ config: { api: { issuer, audience } }, apiKeys: createLocalJWKSet({ keys: [jwk] }) });
+    app = await startTestApp({ config: { api: { issuer, audience, clients: ['android-app'] } }, apiKeys: createLocalJWKSet({ keys: [jwk] }) });
   });
   after(() => app.close());
   const call = (token?: string) => fetch(`${app.url}/api/me`, token ? { headers: { authorization: `Bearer ${token}` } } : {});
 
   test('a valid token with the role gets through, as the user it names', async () => {
-    const res = await call(await sign({ oid: 'u-1', name: 'Dana', roles: ['user'] }));
+    const res = await call(await sign({ azp: 'android-app', oid: 'u-1', name: 'Dana', roles: ['user'] }));
     assert.equal(res.status, 200);
     assert.deepEqual(await res.json(), { id: 'u-1', name: 'Dana', roles: ['user'] });
   });
   test('no token, a forged, expired or misdirected token: 401', async () => {
     assert.equal((await call()).status, 401);
-    const valid = await sign({ oid: 'u-1', roles: ['user'] });
+    const valid = await sign({ azp: 'android-app', oid: 'u-1', roles: ['user'] });
     assert.equal((await call(valid.slice(0, -4) + 'AAAA')).status, 401);
-    assert.equal((await call(await sign({ oid: 'u-1', roles: ['user'] }, { expires: '-5m' }))).status, 401);
-    assert.equal((await call(await sign({ oid: 'u-1', roles: ['user'] }, { audience: 'api://another-application' }))).status, 401);
-    assert.equal((await call(await sign({ oid: 'u-1', roles: ['user'] }, { issuer: 'https://evil.example/v2.0' }))).status, 401);
+    assert.equal((await call(await sign({ azp: 'android-app', oid: 'u-1', roles: ['user'] }, { expires: '-5m' }))).status, 401);
+    assert.equal((await call(await sign({ azp: 'android-app', oid: 'u-1', roles: ['user'] }, { audience: 'api://another-application' }))).status, 401);
+    assert.equal((await call(await sign({ azp: 'android-app', oid: 'u-1', roles: ['user'] }, { issuer: 'https://evil.example/v2.0' }))).status, 401);
+  });
+  test('a valid token from an application that is not approved: 403', async () => {
+    assert.equal((await call(await sign({ azp: 'makers-own-connector', oid: 'u-1', roles: ['user'] }))).status, 403);
+    assert.equal((await call(await sign({ oid: 'u-1', roles: ['user'] }))).status, 403);
   });
   test('a valid token without the role: 403', async () => {
-    assert.equal((await call(await sign({ oid: 'u-2', roles: [] }))).status, 403);
-    assert.equal((await call(await sign({ oid: 'u-2', groups: ['my-application-users'] }))).status, 403);
+    assert.equal((await call(await sign({ azp: 'android-app', oid: 'u-2', roles: [] }))).status, 403);
+    assert.equal((await call(await sign({ azp: 'android-app', oid: 'u-2', groups: ['my-application-users'] }))).status, 403);
+  });
+});
+
+describe('templates and migrations can\'t be fooled (TS-07, DAT-07)', () => {
+  test('an object from outside never passes for safe markup, whatever its properties are called', () => {
+    const forged = JSON.parse('{"__html": "<script>alert(1)</script>"}');
+    assert.equal(html`<p>${forged}</p>`.toString(), '<p>[object Object]</p>');
+    assert.equal(html`<p>${'<b>'}</p>`.toString(), '<p>&lt;b&gt;</p>');
+    assert.equal(html`<p>${html`<b>ok</b>`}</p>`.toString(), '<p><b>ok</b></p>');
+  });
+  test('two migrations with the same version are refused, instead of one silently never running', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'migrations-'));
+    writeFileSync(join(dir, '0001_a.sql'), 'SELECT 1;');
+    writeFileSync(join(dir, '0002_b.sql'), 'SELECT 1;');
+    assert.deepEqual(migrationFiles(dir), ['0001_a.sql', '0002_b.sql']);
+    writeFileSync(join(dir, '0002_c.sql'), 'SELECT 1;');
+    assert.throws(() => migrationFiles(dir), /share the version 0002/);
   });
 });

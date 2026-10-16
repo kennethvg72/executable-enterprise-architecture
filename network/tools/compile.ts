@@ -13,8 +13,10 @@ export const GENERATED = join(REPO_ROOT, 'network', 'generated');
 /** Every generated file, keyed by its path relative to generated/. */
 export function renderAll(model: Model, policy: Policy): Map<string, string> {
   const files = new Map<string, string>();
+  // Who may ping: the monitoring hosts and the PAWs (ZTN-03).
+  const pingers = [...(model.services.get('observability')?.instances.map((i) => i.address) ?? []), ...(model.landscape.zones['paw']?.cidrs ?? [])];
   for (const s of model.services.values()) {
-    if (!s.appliance) files.set(`nftables/${s.id}.nft`, renderHostRuleset(s, policy));
+    if (!s.appliance) files.set(`nftables/${s.id}.nft`, renderHostRuleset(s, policy, pingers));
   }
   files.set('nftables/hq-router.nft', renderHqRouter(model, policy));
   files.set('egress-proxy/allowlist.yaml', renderEgressAllowlist(policy));

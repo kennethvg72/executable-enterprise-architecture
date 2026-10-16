@@ -13,7 +13,12 @@ import { homedir, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 const WORKSPACE = resolve(import.meta.dirname);
-const RUN = process.env.NATAX_CANARY_RUN ?? '1';
+// Phases (verify-runner.ts): "escape" tries to get out of this runner. "plant" and "check" prove
+// the runner is disposable, run by the launcher in two runners it creates one after the other:
+// what one leaves, the next must not find. "preflight" is the pipeline, before every candidate:
+// the escape attempts, then a look for anything an earlier run left, then a marker for the next.
+const PHASE = process.env.NATAX_CANARY_PHASE ?? 'escape';
+const escaping = PHASE === 'escape' || PHASE === 'preflight';
 const MARKERS = [join(tmpdir(), 'natax-canary-marker'), join(homedir(), '.natax-canary-marker')];
 
 /** Writes a file and removes it again; true if the write succeeded. */
@@ -36,13 +41,13 @@ function reaches(host: string, port: number, timeoutMs = 3000): Promise<boolean>
   });
 }
 
-test('no credentials in the environment, except the run\'s own test database', () => {
+if (escaping) test('no credentials in the environment, except the run\'s own test database', () => {
   const found = Object.keys(process.env).filter((name) =>
     /TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|API_?KEY|PRIVATE_?KEY|AUTH|DATABASE_URL/i.test(name) && name !== 'TEST_DATABASE_URL');
   assert.deepEqual(found, [], `credential-like variables present: ${found.join(', ')}`);
 });
 
-test('no credential files are readable', () => {
+if (escaping) test('no credential files are readable', () => {
   const home = homedir();
   const candidates = [
     join(home, '.ssh'), join(home, '.git-credentials'), join(home, '.npmrc'), join(home, '.netrc'),
@@ -54,30 +59,35 @@ test('no credential files are readable', () => {
   assert.deepEqual(readable, [], `readable: ${readable.join(', ')}`);
 });
 
-test('nothing outside the workspace is writable', () => {
+if (escaping) test('nothing outside the workspace is writable', () => {
   const outside = [join(homedir(), '.natax-canary-write'), resolve(WORKSPACE, '..', '.natax-canary-write')];
   if (process.env.ARCHITECTURE) outside.push(join(process.env.ARCHITECTURE, '.natax-canary-write'));
   const written = outside.filter(canWrite);
   assert.deepEqual(written, [], `written: ${written.join(', ')}`);
 });
 
-// Runs: "1" plants markers and "2" looks for them (verify-runner, two runners in a row).
-// "preflight" is the pipeline, before every candidate: it looks for markers left by any earlier
-// run, then plants its own for the next one. In disposable runners, nothing is ever found.
-test('nothing survives from one run to the next', () => {
-  const plant = () => { for (const marker of MARKERS) try { writeFileSync(marker, 'canary'); } catch { /* not writable: fine */ } };
-  if (RUN === '1') { plant(); return; }
-  const survived = MARKERS.filter((m) => existsSync(m));
-  if (RUN === '2') for (const m of survived) rmSync(m, { force: true });
-  if (RUN === 'preflight') plant();
+const plant = () => { for (const marker of MARKERS) try { writeFileSync(marker, 'canary'); } catch { /* not writable: fine */ } };
+const leftovers = () => MARKERS.filter((m) => existsSync(m));
+
+if (PHASE === 'plant') test('markers planted for the next runner', () => { plant(); });
+
+if (PHASE === 'check') test('nothing survives from one runner to the next', () => {
+  const survived = leftovers();
+  for (const m of survived) rmSync(m, { force: true });
+  assert.deepEqual(survived, [], `left by the previous runner: ${survived.join(', ')}`);
+});
+
+if (PHASE === 'preflight') test('nothing left by an earlier run', () => {
+  const survived = leftovers();
+  plant();
   assert.deepEqual(survived, [], `left by an earlier run: ${survived.join(', ')}`);
 });
 
-test('the internet is unreachable', async () => {
+if (escaping) test('the internet is unreachable', async () => {
   assert.equal(await reaches('1.1.1.1', 443), false, 'reached 1.1.1.1:443');
 });
 
-test('production is unreachable', async () => {
+if (escaping) test('production is unreachable', async () => {
   // The database endpoint on DC1's internal load balancer, from landscape.yaml.
   assert.equal(await reaches('10.1.50.10', 5432), false, 'reached the production database endpoint');
 });

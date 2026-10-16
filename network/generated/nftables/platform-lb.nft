@@ -9,7 +9,7 @@ table inet natax {
     ct state established,related accept
     ct state invalid drop
     iif lo accept
-    ip protocol icmp icmp type { echo-request, destination-unreachable, time-exceeded } accept
+    ip saddr { 10.1.50.40, 10.1.50.41, 10.2.50.40, 10.2.50.41, 10.250.0.0/24, 10.3.90.0/24 } ip protocol icmp icmp type echo-request accept comment "Monitoring and administration may ping (ZTN-03)"
     ip saddr { 10.1.20.71, 10.1.20.72, 10.2.20.71, 10.2.20.72 } ip daddr { 10.1.50.10, 10.2.50.10 } tcp dport 5433 accept comment "returns-service uses core-db postgres"
     ip saddr { 10.1.20.41, 10.1.20.42, 10.2.20.41, 10.2.20.42 } ip daddr { 10.1.50.10, 10.2.50.10 } tcp dport 5433 accept comment "efile-gateway uses core-db postgres"
     ip saddr { 10.1.20.31, 10.2.20.31 } ip daddr { 10.1.50.10, 10.2.50.10 } tcp dport 5432 accept comment "Stores triage state."
@@ -25,7 +25,6 @@ table inet natax {
     type filter hook output priority filter; policy drop;
     ct state established,related accept
     oif lo accept
-    ip protocol icmp accept
     ip daddr { 10.1.30.11, 10.2.30.11 } tcp dport 5432 accept comment "platform-lb forwards to core-db postgres"
     ip daddr { 10.1.30.11, 10.2.30.11 } tcp dport 8008 accept comment "platform-lb checks core-db /primary"
     ip daddr { 10.1.30.31, 10.2.30.31 } tcp dport 5432 accept comment "platform-lb forwards to app-db postgres"
@@ -33,6 +32,9 @@ table inet natax {
     ip daddr { 10.1.20.31, 10.2.20.31 } tcp dport 8443 accept comment "platform-lb forwards to rejection-triage web"
     ip daddr { 10.1.50.40, 10.1.50.41, 10.2.50.40, 10.2.50.41 } tcp dport 6514 accept comment "Ship logs (OBS-01)"
     ip daddr { 10.1.50.20, 10.1.50.21, 10.2.50.20, 10.2.50.21 } tcp dport 8200 accept comment "Fetch secrets at runtime (SEC-03)"
+    ip daddr { 10.1.50.90, 10.2.50.90 } udp dport 53 accept comment "Name resolution"
+    ip daddr { 10.1.50.90, 10.2.50.90 } tcp dport 53 accept comment "Name resolution (large answers"
+    ip daddr { 10.1.50.90, 10.2.50.90 } udp dport 123 accept comment "Time (NTP)"
     ip daddr { 10.1.50.11, 10.1.50.12 } ip protocol vrrp accept comment "VIP failover between the platform-lb pair in dc1"
     ip daddr { 10.2.50.11, 10.2.50.12 } ip protocol vrrp accept comment "VIP failover between the platform-lb pair in dc2"
     limit rate 10/second log prefix "natax-drop-out "

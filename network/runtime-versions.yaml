@@ -1,0 +1,7 @@
+# The versions of the software that enforces this architecture in production (DEL-06). The
+# authority checks run with exactly these versions, check them before they start, and record them
+# in the verdict: nftables' set syntax and defaults have changed between versions, and a check run
+# with another version proves nothing about production. Changing a version is a release of this
+# architecture.
+
+nftables: 1.0.9

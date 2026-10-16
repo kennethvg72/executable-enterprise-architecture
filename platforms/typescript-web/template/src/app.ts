@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { createAuth } from './auth.ts';
 import type { JWTVerifyGetKey } from 'jose';
 import type { Config } from './config.ts';
-import { databaseReachable, type Pool } from './db.ts';
+import { createDatabaseCheck, type Pool } from './db.ts';
 import { createHealth } from './health.ts';
 import { html, page } from './html.ts';
 import { createListener, createRouter, htmlResponse, json } from './http.ts';
@@ -36,7 +36,8 @@ export function createApp(deps: Deps) {
 
   // Readiness checks only critical dependencies: architecture.yaml consumes with critical: true.
   // It uses a connection of its own: a busy pool is overload, not an unreachable database.
-  const health = createHealth([{ name: 'database', run: () => databaseReachable(config.databaseUrl) }]);
+  const databaseCheck = createDatabaseCheck(config.databaseUrl);
+  const health = createHealth([{ name: 'database', run: databaseCheck.run }]);
 
   router.get('/health/live', () => json(health.live()));
   router.get('/health/ready', async () => {
@@ -61,7 +62,7 @@ export function createApp(deps: Deps) {
     if (req.url !== '/metrics') { res.writeHead(404).end(); return; }
     res.writeHead(200, { 'content-type': 'text/plain; version=0.0.4' }).end(metrics.render());
   };
-  return { listener, metricsListener, metrics, router };
+  return { listener, metricsListener, metrics, router, close: databaseCheck.close };
 }
 
 /** Start the application and metrics servers. Port 0 picks a free port (tests use this). */
@@ -90,6 +91,7 @@ export async function start(deps: Deps) {
         new Promise((r) => metricsServer.close(r)),
       ]);
       server.closeAllConnections();
+      await app.close();
     },
   };
 }

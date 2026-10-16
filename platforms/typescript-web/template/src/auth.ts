@@ -88,10 +88,17 @@ export function createAuth(options: { pool: Pool; config: Config; appName: strin
       if (!token) return unauthorized;
       let payload;
       try {
-        ({ payload } = await jwtVerify(token, await apiKeys(), { issuer: config.api.issuer, audience: config.api.audience, algorithms: ['RS256'], clockTolerance: 60 }));
+        ({ payload } = await jwtVerify(token, await apiKeys(), { issuer: config.api.issuer, audience: config.api.audience, algorithms: ['RS256'], clockTolerance: 5 }));
       } catch (err) {
         req.log.info('rejected token', { reason: err instanceof Error ? err.name : 'invalid' });
         return unauthorized;
+      }
+      // Any application in the tenant can get a token for this audience on a user's behalf: a
+      // maker's own connector, a consented third-party app. Only the approved clients may call.
+      const client = String(payload['azp'] ?? payload['appid'] ?? '');
+      if (!config.api.clients.includes(client)) {
+        req.log.info('rejected client', { client });
+        return text('This application may not call this API.', 403);
       }
       const user: User = {
         id: String(payload['oid'] ?? payload.sub),

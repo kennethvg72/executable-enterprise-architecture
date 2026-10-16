@@ -90,6 +90,9 @@ platform-flows:
   - { from: all-production, to: secret-store, port: 8200, purpose: Fetch secrets at runtime (SEC-03) }
   - { from: observability, to: all-production, port: 9464, purpose: Scrape metrics (OBS-02) }
   - { from: zone:paw, to: all-production, port: 22, purpose: Just-in-time administration (IAM-06) }
+  - { from: all-production, to: dns-ntp, port: 53, protocol: udp, purpose: Name resolution }
+  - { from: all-production, to: dns-ntp, port: 53, purpose: Name resolution (large answers, over TCP) }
+  - { from: all-production, to: dns-ntp, port: 123, protocol: udp, purpose: Time (NTP) }
 
 # Production services. Each application's entry is registered from its architecture.yaml
 # at its first release, and kept in step by the pipeline (landscape.md is the readable
@@ -149,6 +152,27 @@ services:
     provides: [{ name: api, port: 8200, consumers: all-production }]
     peak-vcpu: 8
 
+  dns-ntp:
+    kind: platform
+    description: >
+      NATAX's own names, and time from each datacenter's GPS clock. Internet names are only ever
+      resolved by the egress proxy, for the destinations it allows (INT-05).
+    class: A
+    owner: central-it
+    instances: [{ site: dc1, address: 10.1.50.90 }, { site: dc2, address: 10.2.50.90 }]
+    peak-vcpu: 4
+
+  backup-store:
+    kind: platform
+    description: >
+      pgBackRest repositories, one in each datacenter. Every database cluster archives its WAL and
+      backups to both, so the surviving datacenter keeps archiving when the other is lost (DAT-08).
+    class: B
+    owner: central-it
+    instances: [{ site: dc1, address: 10.1.50.80 }, { site: dc2, address: 10.2.50.80 }]
+    provides: [{ name: pgbackrest, port: 8432, consumers: [app-db, core-db] }]
+    peak-vcpu: 8
+
   observability:
     kind: platform
     description: Central logs, metrics and alerting.
@@ -191,6 +215,7 @@ services:
       strict: false                 # keep accepting writes when the replica is lost
       promote: synchronous-replica-only
       watchdog: required            # fences a primary that loses its leader lock
+    max-connections: 300            # checked against every consumer's pool, plus readiness and a reserve
     instances: [{ site: dc1, address: 10.1.30.11 }, { site: dc2, address: 10.2.30.11 }]
     provides:
       - { name: postgres, port: 5432, via: platform-lb, frontend-port: 5433, health: { port: 8008, path: /primary }, consumers: database-owners }
@@ -203,6 +228,7 @@ services:
       - { service: core-db, interface: replication, purpose: Synchronous replication to the other datacenter }
       - { service: core-db, interface: patroni, purpose: Patroni member coordination }
       - { service: etcd-quorum, interface: client, purpose: Leader election }
+      - { service: backup-store, interface: pgbackrest, purpose: WAL archive and backups, in both datacenters (DAT-08) }
     peak-vcpu: 96
 
   app-db:
@@ -216,6 +242,7 @@ services:
       strict: false                 # keep accepting writes when the replica is lost
       promote: synchronous-replica-only
       watchdog: required            # fences a primary that loses its leader lock
+    max-connections: 300            # checked against every consumer's pool, plus readiness and a reserve
     instances: [{ site: dc1, address: 10.1.30.31 }, { site: dc2, address: 10.2.30.31 }]
     provides:
       - { name: postgres, port: 5432, via: platform-lb, frontend-port: 5432, health: { port: 8008, path: /primary }, consumers: database-owners }
@@ -227,6 +254,7 @@ services:
       - { service: app-db, interface: replication, purpose: Synchronous replication to the other datacenter }
       - { service: app-db, interface: patroni, purpose: Patroni member coordination }
       - { service: etcd-quorum, interface: client, purpose: Leader election }
+      - { service: backup-store, interface: pgbackrest, purpose: WAL archive and backups, in both datacenters (DAT-08) }
     peak-vcpu: 16
 
   # ---------------------------------------------------------------- customer-facing (class A)

@@ -17,7 +17,7 @@ export async function migrate(databaseUrl: string, dir = MIGRATIONS_DIR): Promis
     await client.query('SELECT pg_advisory_lock($1)', [LOCK_ID]);
     await client.query('CREATE TABLE IF NOT EXISTS schema_migrations (version text PRIMARY KEY, applied_at timestamptz NOT NULL DEFAULT now())');
     const done = new Set((await client.query<{ version: string }>('SELECT version FROM schema_migrations')).rows.map((r) => r.version));
-    const files = readdirSync(dir).filter((f) => /^\d{4}_.+\.sql$/.test(f)).sort();
+    const files = migrationFiles(dir);
     for (const file of files) {
       const version = file.slice(0, 4);
       if (done.has(version)) continue;
@@ -47,4 +47,20 @@ if (import.meta.main) {
   }
   const applied = await migrate(url);
   console.log(applied.length ? `Applied: ${applied.join(', ')}` : 'Database is up to date.');
+}
+
+/**
+ * The migrations, in order. Each version (the four-digit prefix) is recorded once it has run, so
+ * two files with the same prefix would leave the second unapplied forever, silently. Refused.
+ */
+export function migrationFiles(dir: string): string[] {
+  const files = readdirSync(dir).filter((f) => /^\d{4}_.+\.sql$/.test(f)).sort();
+  const seen = new Map<string, string>();
+  for (const f of files) {
+    const version = f.slice(0, 4);
+    const earlier = seen.get(version);
+    if (earlier) throw new Error(`Migrations ${earlier} and ${f} share the version ${version}; renumber one.`);
+    seen.set(version, f);
+  }
+  return files;
 }

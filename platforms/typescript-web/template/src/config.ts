@@ -16,7 +16,7 @@ export interface Config {
   devSignIn: boolean;
   oidc?: { issuer: string; clientId: string; clientSecret: string; redirectUri: string };
   /** Bearer tokens for staff APIs at the edge (staff-edge, AND-05): who issues them, and for which API. */
-  api?: { issuer: string; audience: string };
+  api?: { issuer: string; audience: string; clients: string[] };
   timeZone: string;
   maxConcurrentRequests: number;
 }
@@ -77,8 +77,12 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     throw new ConfigError('OIDC_ISSUER needs OIDC_CLIENT_ID, OIDC_CLIENT_SECRET_FILE and OIDC_REDIRECT_URI.');
   }
   // Staff APIs at the edge (AND-05) accept the workforce IdP's access tokens for this API's audience.
-  const api = env.OIDC_API_AUDIENCE ? { issuer: env.OIDC_ISSUER ?? '', audience: env.OIDC_API_AUDIENCE } : undefined;
+  // Only the client applications named here may call it: the app itself, and approved connectors.
+  const api = env.OIDC_API_AUDIENCE
+    ? { issuer: env.OIDC_ISSUER ?? '', audience: env.OIDC_API_AUDIENCE, clients: (env.OIDC_API_CLIENTS ?? '').split(',').map((c) => c.trim()).filter(Boolean) }
+    : undefined;
   if (api && !api.issuer) throw new ConfigError('OIDC_API_AUDIENCE needs OIDC_ISSUER.');
+  if (api && !api.clients.length) throw new ConfigError('OIDC_API_AUDIENCE needs OIDC_API_CLIENTS: the client applications allowed to call this API (AND-05, PA-09).');
   if (mode === 'production' && !oidc && !api) throw new ConfigError('Production requires OIDC sign-in, or bearer tokens for an API (IAM-02).');
   // Sign-in talks to the workforce IdP, which is outside NATAX: only through the egress proxy
   // (INT-05). Node's fetch uses HTTPS_PROXY only when NODE_USE_ENV_PROXY=1.

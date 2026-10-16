@@ -10,7 +10,8 @@ import { parse as parseYaml } from 'yaml';
 import { REPO_ROOT, appArgs, loadModel, readYaml, withApplications } from '../../enterprise-architecture/tools/lib/load.ts';
 import type { Model } from '../../enterprise-architecture/tools/lib/model.ts';
 import { siteOf, within } from '../../enterprise-architecture/tools/lib/net.ts';
-import { fail, pass, report, warn, type Result } from '../../enterprise-architecture/tools/lib/report.ts';
+import { fail, pass, report, tiered, warn, type Result } from '../../enterprise-architecture/tools/lib/report.ts';
+import { networkAuthority } from './authority.ts';
 import { GENERATED, renderAll } from './compile.ts';
 import { compilePolicy, isAllowed, type Policy } from './policy.ts';
 import { chainAccepts, parseRuleset, rulesAllow, type HostRules, type NftChain } from './nft.ts';
@@ -112,11 +113,15 @@ export function checkInvariants(model: Model, policy: Policy): Result[] {
     `${toInternet.filter((f) => f.from.id !== 'egress-proxy').map((f) => f.from.id).join(', ')} reach the internet directly.`,
     'Declare the external in consumes; traffic goes through the egress proxy.');
 
-  const fromWorkforce = flows.filter((f) => f.from.kind === 'zone' && f.from.id === 'workforce');
-  check('SEC-02', fromWorkforce.every((f) => svc(f.to.id)?.kind === 'load-balancer'),
-    'Staff devices reach applications only through load balancers.',
-    `Staff devices reach ${fromWorkforce.filter((f) => svc(f.to.id)?.kind !== 'load-balancer').map((f) => f.to.id).join(', ')} directly.`,
-    'Publish the application via platform-lb.');
+  // Every zone (staff devices, the Power Platform's subnet, any added later) reaches services only
+  // through a load balancer, which checks health and limits each source to its applications.
+  // PAWs are the exception: administration goes directly to the hosts (IAM-06).
+  const fromZones = flows.filter((f) => f.from.kind === 'zone' && f.from.id !== 'paw' && f.from.id !== 'internet');
+  const direct = fromZones.filter((f) => svc(f.to.id)?.kind !== 'load-balancer');
+  check('SEC-02', direct.length === 0,
+    'Every zone reaches services only through load balancers (PAWs administer hosts directly).',
+    `${direct.map((f) => `zone ${f.from.id} reaches ${f.to.id}:${f.port}`).join(', ')} directly.`,
+    'Publish the service via platform-lb, and list the zone as its consumer there.');
 
   // RES-04: every declared DC1 <-> DC2 flow must be able to transit HQ when the direct link is
   // down. Replication and quorum matter most, but applications reaching a database primary
@@ -132,7 +137,7 @@ export function checkInvariants(model: Model, policy: Policy): Result[] {
   // Matched by addresses and port: two flows with the same port and purpose (app-db and core-db
   // replication) must each be covered, not one standing in for the other.
   const untransited = crossDc.filter((f) => crossPairs(f, model).some(([src, dst]) =>
-    !transit.some((t) => t.port === f.port && t.from.includes(src) && t.to.includes(dst))));
+    !transit.some((t) => t.port === f.port && (t.protocol ?? 'tcp') === (f.protocol ?? 'tcp') && t.from.includes(src) && t.to.includes(dst))));
   const quorum = crossDc.filter((f) => svc(f.from.id)?.voting || svc(f.from.id)?.kind === 'database-cluster');
   check('RES-04', crossDc.length > 0 && untransited.length === 0,
     `All ${crossDc.length} DC1 <-> DC2 flows can transit HQ, including ${quorum.length} replication and quorum flows.`,
@@ -175,14 +180,19 @@ export function checkGeneratedRules(model: Model, policy: Policy, files: Map<str
       const chain = chains.get(hook);
       if (!chain || chain.policy !== 'drop') results.push(fail('ZTN-03', `nftables/${s.id}.nft: the ${hook} chain is ${chain ? 'not default deny' : 'missing'}.`, 'Every host denies by default, inbound and outbound.'));
     }
-    const ssh = (chains.get('input')?.rules ?? []).filter((r) => r.verdict === 'accept' && r.protocol !== 'other' && (!r.ports || r.ports.includes(22)));
+    const ssh = (chains.get('input')?.rules ?? []).filter((r) => r.protocol === 'tcp' && r.port === 22);
     const loose = ssh.filter((r) => !r.saddr || r.saddr.negate || !r.saddr.cidrs.every((c) => paw.some((z) => within(c.split('/')[0]!, z))));
     if (loose.length) results.push(fail('IAM-06', `nftables/${s.id}.nft accepts port 22 from more than PAWs: ${loose[0]!.line}`, 'Only privileged access workstations reach port 22.'));
-    // Probes only test TCP. The rules can show the rest: nothing is accepted except declared TCP,
-    // ICMP for diagnostics, and VRRP between load balancer pairs (ZTN-03).
+    // Probes only test TCP. The rules can show the rest: new ICMP only as an echo request from the
+    // monitoring hosts and PAWs, VRRP only between a load balancer pair, nothing from anywhere (ZTN-03).
+    const pingers = [...(model.services.get('observability')?.instances.map((i) => i.address) ?? []), ...paw];
     for (const [hook, chain] of chains) {
-      const other = chain.rules.filter((r) => r.verdict === 'accept' && (r.protocol === 'any' || (r.protocol === 'other' && !['icmp', 'vrrp'].includes(r.protocolName ?? ''))));
-      if (other.length) results.push(fail('ZTN-03', `nftables/${s.id}.nft (${hook}) accepts more than TCP, ICMP and VRRP: ${other[0]!.line}`, 'Fix the renderer: every accepted flow is a declared TCP flow.'));
+      const loose = chain.rules.filter((r) =>
+        (r.protocol === 'icmp' && (hook === 'input'
+          ? !r.saddr || r.saddr.negate || !r.saddr.cidrs.every((c) => pingers.some((x) => within(c.split('/')[0]!, x))) || r.icmpTypes?.some((t) => t !== 'echo-request')
+          : s.id !== 'observability' || r.icmpTypes?.some((t) => t !== 'echo-request')))
+        || (r.protocol === 'vrrp' && !(r.saddr ?? r.daddr)?.cidrs.every((c) => s.instances.some((i) => i.address === c))));
+      if (loose.length) results.push(fail('ZTN-03', `nftables/${s.id}.nft (${hook}) accepts ICMP or VRRP beyond monitoring, administration and its own pair: ${loose[0]!.line}`, 'Fix the renderer.'));
     }
     for (const i of [...s.instances, ...(s.vips ?? []), ...(s.egress ?? [])]) hosts.set(i.address, chains);
   }
@@ -195,11 +205,22 @@ export function checkGeneratedRules(model: Model, policy: Policy, files: Map<str
       results.push(fail('DEL-06', `nftables/hq-router.nft can't be read back: ${(e as Error).message}`, 'Fix the renderer.'));
     }
     const crossing = policy.flows.filter((f) => f.from.kind === 'service' && f.to.kind === 'service').flatMap((f) => crossPairs(f, model).map(([src, dst]) => ({ f, src, dst })));
-    const missing = crossing.filter(({ f, src, dst }) => !forward || !chainAccepts(forward, src, dst, f.port));
+    const missing = crossing.filter(({ f, src, dst }) => !forward || !chainAccepts(forward, src, dst, f.port, f.protocol ?? 'tcp'));
     results.push(missing.length
       ? fail('RES-04', `The HQ router's generated rules don't forward ${missing.length} of ${crossing.length} DC1 <-> DC2 paths, for example ${missing.slice(0, 3).map(({ f, src, dst }) => `${f.from.id} ${src} -> ${f.to.id} ${dst}:${f.port}`).join('; ')}.`, 'Fix the renderer, then regenerate. Without transit, losing the direct fiber splits the datacenters.')
       : pass('RES-04', `The HQ router's generated rules forward all ${crossing.length} declared DC1 <-> DC2 paths.`));
   }
+
+  // UDP isn't probed, so the rules carry the whole proof: every declared UDP flow passes, and no
+  // UDP port is accepted that no flow declares.
+  const udp = policy.flows.filter((f) => f.protocol === 'udp');
+  const udpMissing = udp.flatMap((f) => f.from.addresses.filter((a) => hosts.has(a) || hosts.has(f.to.addresses[0]!)).slice(0, 2).flatMap((src) => f.to.addresses.slice(0, 2).map((dst) => ({ f, src, dst }))))
+    .filter(({ f, src, dst }) => !rulesAllow(hosts, src, dst, f.port, 'udp'));
+  const udpPorts = new Set(udp.map((f) => f.port));
+  const udpExtra = [...new Set([...hosts.values()])].flatMap((chains) => [...chains.values()].flatMap((c) => c.rules)).filter((r) => r.protocol === 'udp' && !udpPorts.has(r.port!));
+  results.push(udpMissing.length || udpExtra.length
+    ? fail('ZTN-03', `UDP on the generated rules: ${[...udpMissing.slice(0, 3).map(({ f, src, dst }) => `${f.purpose} blocked ${src} -> ${dst}:${f.port}`), ...udpExtra.slice(0, 3).map((r) => `undeclared: ${r.line}`)].join('; ')}.`, 'Fix the renderer, then regenerate.')
+    : pass('ZTN-03', `All ${udp.length} declared UDP flows pass the generated rules, and no other UDP port is open (UDP isn't probed).`));
 
   // A path between two hosts without generated rules (zones, the edge appliances) is enforced
   // elsewhere; the host rules can't decide it, so it isn't counted either way.
@@ -275,8 +296,10 @@ export function verifyNetwork(model = loadModel(), { drift = true } = {}): Resul
   return [
     ...checkInvariants(model, policy),
     ...checkExpectations(model, policy, expectations),
-    ...checkGeneratedRules(model, policy, generatedFiles(model, policy, drift), expectations),
-    ...checkEgressAllowlist(model, generatedFiles(model, policy, drift)),
+    // The fast readers may fail early; only the authority (real nftables) can prove (DEL-06).
+    ...tiered('reader', checkGeneratedRules(model, policy, generatedFiles(model, policy, drift), expectations)),
+    ...tiered('reader', checkEgressAllowlist(model, generatedFiles(model, policy, drift))),
+    ...networkAuthority(model, policy, generatedFiles(model, policy, drift)),
     ...(drift ? checkDrift(model, policy) : []),
   ];
 }

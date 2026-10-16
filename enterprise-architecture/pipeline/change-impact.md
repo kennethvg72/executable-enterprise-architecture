@@ -59,7 +59,7 @@ The table is a floor. The Governance Agent adds domains when the diff warrants i
 - A new outbound HTTP call hidden in a library update is a **network** change, even though `consumes` didn't change. It's also a finding: the manifest is incomplete.
 - A change to error handling around a dependency affects **resilience**, because it changes failure behavior.
 
-A domain selected by the table can be dropped only with a recorded reason. For example, a change to a source file that only fixes a comment doesn't need the operations checks. The reason goes in the verdict.
+The table is a floor: a domain it selects can't be dropped, by the Governance Agent or anyone. An agent can be persuaded; a floor can't. A change that only fixes a comment still gets the operations checks; that costs minutes, and a persuasive diff description that switches off checks costs far more ([AGT-09](../principles/ai-agents.md#agt-09-content-is-data-not-instructions)).
 
 ## Shared infrastructure changes
 

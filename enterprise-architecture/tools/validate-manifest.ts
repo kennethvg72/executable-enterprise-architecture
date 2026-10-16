@@ -96,6 +96,13 @@ export function validateManifest(appDir: string, manifest: Manifest, options: Op
     (max, d) => Math.max(max, CLASSIFICATION_ORDER.indexOf(d.classification)),
     0,
   );
+  // Exposure is a claim; what the application publishes is the fact. A provide through the edge is
+  // internet or staff-edge exposure, whatever the manifest says (IAM-01, OWN-03).
+  const viaEdge = (m.provides ?? []).filter((x) => x.via === 'edge-adc');
+  const derived = viaEdge.some((x) => Array.isArray(x.consumers) && x.consumers.includes('zone:internet')) ? 'internet' : viaEdge.length ? 'staff-edge' : 'internal';
+  results.push(derived === m.exposure
+    ? pass('IAM-01', `Exposure ${m.exposure} matches what it publishes.`)
+    : fail('IAM-01', `The manifest says exposure ${m.exposure}, but what it publishes makes it ${derived}.`, 'Set exposure to match provides, or change what it publishes.'));
   const needsTechnicalOwner: string[] = [];
   if (m.resilience.class === 'A') needsTechnicalOwner.push('resilience class A');
   if (m.exposure === 'internet' || m.exposure === 'staff-edge') needsTechnicalOwner.push(`${m.exposure} exposure`);

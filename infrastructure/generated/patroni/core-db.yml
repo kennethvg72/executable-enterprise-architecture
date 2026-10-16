@@ -7,10 +7,13 @@ etcd3:
   protocol: https
   hosts: [10.1.30.21:2379, 10.2.30.21:2379, 10.3.70.21:2379]   # one voting member per site (RES-04)
   cacert: /etc/patroni/natax-workload-ca.pem
-  # The certificate's name is the cluster's etcd user, which may touch only /service/core-db/
-  # (etcd/rbac.yaml): another cluster sharing the quorum can't take its leader lock (SEC-09).
   cert: /etc/patroni/patroni-core-db.pem
   key: /etc/patroni/patroni-core-db.key
+  # Its own etcd user, which may touch only its own keys (etcd/rbac.yaml): another cluster sharing
+  # the quorum can't take its leader lock (SEC-09). Password authentication, because etcd ignores
+  # certificate names on the gateway Patroni talks to. The password comes from the secret store
+  # at deployment (PATRONI_ETCD3_PASSWORD), never from this file.
+  username: patroni-core-db
 bootstrap:
   dcs:                               # used only when the cluster is first created; afterwards patroni/core-db.dcs.yml
     ttl: 30                            # longer than the WAN rerouting time (sites.md)
@@ -22,9 +25,12 @@ bootstrap:
     postgresql:
       use_pg_rewind: true
       parameters:
+        max_connections: 300            # every consumer's pool fits, with a reserve (INF-05)
         synchronous_commit: "on"
         ssl: "on"
         ssl_min_protocol_version: TLSv1.3
+        archive_mode: "on"
+        archive_command: "pgbackrest --stanza=core-db archive-push %p"   # to both datacenters (backup-store, DAT-08)
 watchdog:
   mode: required                   # fence a primary that loses its leader lock
   device: /dev/watchdog

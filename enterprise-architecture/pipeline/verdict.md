@@ -12,8 +12,13 @@ A rejection is not complete without a compliant path forward. If the Governance 
 Application: <name>
 Commit: <sha>
 Verdict: approved | rejected
-Governance Agent: <model>
-Architecture versions applied: enterprise-architecture 1.0.0, typescript-web 1.0.0, ...
+Governance Agent: <provider> <exact model version, as pinned in models.yaml>
+Instructions: <hash of the role file and the architecture the agent read>
+Transcript: <hash of the full session, kept in the verdict store>
+Architecture: enterprise-architecture/v1.0.0, typescript-web/v1.0.0, ... (commit <sha>)
+Candidate: <artifact digest>
+Authority tools: nftables 1.0.9, haproxy 2.8.x, ... (as run)
+Break-glass in force: <none, or each change and its reason>
 Date: <ISO 8601>
 
 ## Impact

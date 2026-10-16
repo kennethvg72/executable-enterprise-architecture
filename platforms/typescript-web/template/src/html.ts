@@ -1,7 +1,16 @@
 // HTML rendering with escaping by default (TS-07). Interpolated values are escaped unless
 // they were produced by `html` itself (or explicitly by `raw`, which needs a reason).
 
-export interface SafeHtml { readonly __html: string }
+/**
+ * Markup that is safe to emit. Only html and raw make one: a class with a private field, so no
+ * object that arrives from outside (a parsed JSON body, a database row) can pass for it, however
+ * its properties are named.
+ */
+export class SafeHtml {
+  readonly #markup: string;
+  constructor(markup: string) { this.#markup = markup; }
+  toString(): string { return this.#markup; }
+}
 
 const ESCAPES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 
@@ -9,11 +18,10 @@ export function escape(value: unknown): string {
   return String(value ?? '').replace(/[&<>"']/g, (c) => ESCAPES[c]!);
 }
 
-const isSafe = (v: unknown): v is SafeHtml => typeof v === 'object' && v !== null && '__html' in v;
 
 function render(value: unknown): string {
   if (Array.isArray(value)) return value.map(render).join('');
-  if (isSafe(value)) return value.__html;
+  if (value instanceof SafeHtml) return value.toString();
   if (value === false || value === null || value === undefined) return '';
   return escape(value);
 }
@@ -21,12 +29,12 @@ function render(value: unknown): string {
 export function html(strings: TemplateStringsArray, ...values: unknown[]): SafeHtml {
   let out = strings[0]!;
   values.forEach((v, i) => { out += render(v) + strings[i + 1]!; });
-  return { __html: out };
+  return new SafeHtml(out);
 }
 
 /** Trusted markup that must not be escaped. Use sparingly, and never for user input. */
 export function raw(markup: string): SafeHtml {
-  return { __html: markup };
+  return new SafeHtml(markup);
 }
 
 export interface PageUser { name: string; roles: string[] }
@@ -55,5 +63,5 @@ ${banner ? html`<p class="banner" role="status">${banner}</p>` : ''}
 ${body}
 </main>
 </body>
-</html>`.__html;
+</html>`.toString();
 }

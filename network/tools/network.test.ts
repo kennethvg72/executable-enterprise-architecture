@@ -11,6 +11,8 @@ import { probePlan, renderHostRuleset } from './render.ts';
 import { checkEgressAllowlist, checkGeneratedRules, checkInvariants, type Expectation } from './verify.ts';
 import { renderAll } from './compile.ts';
 import { classify } from './probe.ts';
+import { combine } from './probe-report.ts';
+import type { Probe } from './render.ts';
 
 const failures = (model: Model) => checkInvariants(model, compilePolicy(model)).filter((r) => r.status === 'fail');
 const withLandscape = (change: (l: ReturnType<typeof loadLandscape>) => void) => {
@@ -65,7 +67,7 @@ test('reaching an external that belongs to a shared service is refused (INT-05)'
 test('publishing an application to staff without the load balancer is caught', () => {
   const model = loadModel();
   model.services.get('rejection-triage')!.provides![0]!.via = undefined;
-  assert.ok(failures(model).some((r) => r.rule === 'SEC-02' && r.message.includes('Staff devices reach')));
+  assert.ok(failures(model).some((r) => r.rule === 'SEC-02' && r.message.includes('zone workforce reaches rejection-triage')));
 });
 
 test('an SSH path from anywhere but a PAW is caught (no jump hosts)', () => {
@@ -153,7 +155,18 @@ test('the generated rules are verified as written, so a renderer bug is caught (
     ['nftables/payments.nft', 'default allow', (t) => t.replace('hook input priority filter; policy drop;', 'hook input priority filter; policy accept;'), 'ZTN-03'],
     ['nftables/calc-engine.nft', 'SSH from anywhere', insert('tcp dport 22 accept'), 'IAM-06'],
     ['nftables/returns-service.nft', 'a statement nobody can verify', insert('meta l4proto tcp accept'), 'DEL-06'],
-    ['nftables/payments.nft', 'UDP accepted, which no probe tests', insert('ip saddr 10.0.0.0/8 ip protocol udp accept'), 'ZTN-03'],
+    ['nftables/payments.nft', 'UDP accepted, which no probe tests', insert('ip saddr 10.0.0.0/8 ip protocol udp accept'), 'DEL-06'],
+    // Round 2's differentials: valid nftables the earlier reader skipped or misread, while the
+    // kernel accepted the traffic. Each is refused by the grammar now.
+    ['nftables/core-db.nft', 'every new connection accepted', insert('ct state new accept'), 'DEL-06'],
+    ['nftables/core-db.nft', 'state list including new', insert('ct state established,related,new accept'), 'DEL-06'],
+    ['nftables/app-db.nft', 'a port range', insert('ip saddr 10.0.0.0/8 tcp dport { 1-65535 } accept'), 'DEL-06'],
+    ['nftables/app-db.nft', 'a named port', insert('ip saddr 10.0.0.0/8 tcp dport { postgresql } accept'), 'DEL-06'],
+    ['nftables/app-db.nft', 'a port set', insert('ip saddr 10.0.0.0/8 tcp dport { 22, 5432 } accept'), 'DEL-06'],
+    ['nftables/app-db.nft', 'a rule hidden after a comment marker', insert('ip saddr 10.0.0.0/8 tcp dport 5432 accept # harmless'), 'DEL-06'],
+    ['nftables/app-db.nft', 'a second input chain', (t) => t.replace('  chain output {', '  chain input {\n    type filter hook input priority filter; policy accept;\n  }\n\n  chain output {'), 'DEL-06'],
+    ['nftables/app-db.nft', 'an invalid address that matches nothing in the reader', insert('ip saddr 10.0.0.300 tcp dport 5432 accept'), 'DEL-06'],
+    ['nftables/payments.nft', 'ICMP from anywhere', (t) => t.replace(/ip saddr \{[^}]*\} ip protocol icmp icmp type echo-request/, 'ip protocol icmp icmp type echo-request'), 'ZTN-03'],
     ['nftables/hq-router.nft', 'app-db replication can\'t transit HQ', (t) => t.replace(/[^\n]*ip saddr 10\.1\.30\.31 ip daddr 10\.2\.30\.31 tcp dport 5432 accept[^\n]*\n/, ''), 'RES-04'],
   ];
   for (const [file, name, mutate, rule] of mutations) {
@@ -193,4 +206,28 @@ test('the egress allowlist is checked as the proxy reads it (INT-05, DEL-06)', (
     assert.notEqual(changed, allowlist, `the mutation "${name}" didn't apply`);
     assert.ok(fails(changed).some((m) => expected.test(m)), `not caught: ${name}`);
   }
+});
+
+test('a blocked probe is conclusive with evidence from any vantage in the same window (ZTN-06)', () => {
+  const probe = (from: string, to: string, expect: 'open' | 'blocked', port = 5432) => ({ from, fromLabel: from, to, toLabel: to, port, expect }) as Probe;
+  const at = (minutes: number) => new Date(Date.UTC(2026, 9, 15, 10, minutes)).toISOString();
+  // From rejection-triage, the replica can't be reached, and nothing from here shows it's up...
+  const triage = { from: '10.1.20.31', started: at(0), finished: at(5), results: [{ probe: probe('10.1.20.31', '10.2.30.31', 'blocked'), outcome: 'timeout' as const }] };
+  assert.equal(combine([triage]).verdict, 'INCONCLUSIVE');
+  // ...but the load balancer reached it in the same window: the timeout is evidence of filtering.
+  const lb = { from: '10.1.50.11', started: at(2), finished: at(6), results: [{ probe: probe('10.1.50.11', '10.2.30.31', 'open', 8008), outcome: 'open' as const }] };
+  assert.equal(combine([triage, lb]).verdict, 'PASS');
+  // Monitoring's own view counts too.
+  assert.equal(combine([triage], ['10.2.30.31']).verdict, 'PASS');
+  // Evidence from another day isn't evidence.
+  assert.equal(combine([triage, { ...lb, started: at(0).replace('15T', '14T'), finished: at(1).replace('15T', '14T') }]).verdict, 'INCONCLUSIVE');
+});
+
+test('no zone reaches a service directly, the Power Platform\'s included (SEC-02, PA-09)', () => {
+  const landscape = clone(loadLandscape());
+  const db = landscape.services['core-db']!;
+  db.provides = [...(db.provides ?? []), { name: 'direct', port: 5432, consumers: ['zone:power-platform'] }];
+  const model = loadModel(undefined, landscape);
+  const results = checkInvariants(model, compilePolicy(model));
+  assert.ok(results.some((r) => r.status === 'fail' && r.rule === 'SEC-02' && /power-platform reaches core-db/.test(r.message)));
 });

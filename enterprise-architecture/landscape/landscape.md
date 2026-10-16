@@ -50,6 +50,7 @@ Applications built through the pipeline are registered by it at their first rele
 |---|---|---|
 | Microsoft 365 | Email, documents, Teams, SharePoint, Power Platform, workforce sign-in | Jordan Alvarez |
 | HR system | People, absence, leave, the workforce directory's source | Lena Fischer |
+| AI model providers (two, of different families) | The central Governance and Security Agents; models pinned in [models.yaml](../pipeline/models.yaml) ([AGT-11](../principles/ai-agents.md#agt-11-the-ai-providers-are-governed-like-any-other-dependency)) | Morgan Ellis |
 
 ## Systems of record
 

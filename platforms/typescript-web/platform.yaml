@@ -10,4 +10,4 @@ dependencies: approved-dependencies.yaml
 install: npm ci --ignore-scripts      # the pipeline installs from the lockfile itself; install scripts never run (SEC-13)
 checks:                            # run by the pipeline's deterministic stage, in the application's directory
   - { name: Type check, rule: TS-01, run: npx tsc --noEmit, needs: node_modules }
-  - { name: Tests, rule: DEL-02, run: npm test --silent, needs: node_modules, database: true }
+  - { name: Tests, rule: DEL-02, run: npm test --silent, needs: node_modules, database: true, counts: node-test }

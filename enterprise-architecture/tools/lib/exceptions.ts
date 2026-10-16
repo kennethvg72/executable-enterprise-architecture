@@ -3,7 +3,8 @@
 // application, into warnings that cite it: the deterministic checks take exceptions into account,
 // and nothing else does.
 
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { REPO_ROOT, loadDirectory, loadExceptions } from './load.ts';
 import type { Exception } from './model.ts';
@@ -14,16 +15,14 @@ const MAX_DAYS = 366;   // at most 12 months
 
 /** Every rule ID defined anywhere in the architecture ("### SEC-05: ..."). */
 export function ruleIds(root = REPO_ROOT): Set<string> {
+  // Only files Git tracks: an untracked or ignored file planted in the checkout defines no rules.
+  const listed = spawnSync('git', ['ls-files', '-z', '--', '*.md'], { cwd: root, encoding: 'utf8' });
+  const files = listed.status === 0 ? listed.stdout.split('\0').filter((f) => f && !f.includes('/template/')) : [];
   const ids = new Set<string>();
-  const walk = (dir: string) => {
-    for (const entry of readdirSync(dir)) {
-      if (entry === 'node_modules' || entry === '.git' || entry === 'template' || entry === 'generated') continue;
-      const full = join(dir, entry);
-      if (statSync(full).isDirectory()) walk(full);
-      else if (entry.endsWith('.md')) for (const m of readFileSync(full, 'utf8').matchAll(/^### ([A-Z]{2,4}-\d{2}):/gm)) ids.add(m[1]!);
-    }
-  };
-  walk(root);
+  for (const f of files) {
+    if (!existsSync(join(root, f))) continue;
+    for (const m of readFileSync(join(root, f), 'utf8').matchAll(/^### ([A-Z]{2,4}-\d{2}):/gm)) ids.add(m[1]!);
+  }
   return ids;
 }
 
@@ -34,6 +33,7 @@ export function exceptionProblems(e: Exception, today: Date, root = REPO_ROOT, i
   if (!e.rules?.length) problems.push('it names no rules');
   if (unknown.length) problems.push(`it names rules that don't exist: ${unknown.join(', ')}`);
   if (!e.reason?.trim()) problems.push('it has no reason');
+  if (!e.finding?.trim()) problems.push('it doesn\'t say which finding it covers, so it would cover every finding of its rules');
   if (!e['compensating-controls']?.trim()) problems.push('it has no compensating controls');
   const owner = loadDirectory(root).find((p) => p.id === e.owner);
   if (!owner || owner.status !== 'active') problems.push(`its owner "${e.owner}" isn't an active employee`);
@@ -62,10 +62,10 @@ export function exceptionsFor(application: string, today: Date, root = REPO_ROOT
   return { valid, problems };
 }
 
-/** Failures of rules a valid exception covers become warnings that cite it. Everything else is unchanged. */
+/** The one finding a valid exception covers becomes a warning that cites it. Every other failure, of the same rule too, stays. */
 export function applyExceptions(results: Result[], valid: Exception[]): Result[] {
   return results.map((r) => {
-    const e = r.status === 'fail' ? valid.find((x) => x.rules.includes(r.rule)) : undefined;
+    const e = r.status === 'fail' ? valid.find((x) => x.rules.includes(r.rule) && r.message.toLowerCase().includes(x.finding.trim().toLowerCase())) : undefined;
     return e ? warn(r.rule, `${r.message} Covered by Board exception ${e.id} until ${e.expires}; compensating controls: ${e['compensating-controls'].trim()}`) : r;
   });
 }

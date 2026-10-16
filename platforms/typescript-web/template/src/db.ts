@@ -45,17 +45,30 @@ export async function transaction<T>(pool: pg.Pool, work: (client: pg.PoolClient
 }
 
 /**
- * Readiness asks "can this instance reach its database?" on a connection of its own, so a
- * busy pool (which is overload, handled by fast 503s) isn't mistaken for an unreachable
- * database (RES-06).
+ * Readiness asks "can this instance reach its database?" on a connection of its own, so a busy
+ * pool (which is overload, handled by fast 503s) isn't mistaken for an unreachable database
+ * (RES-06). One per instance, kept open and reused: a burst of readiness checks never opens
+ * connections the database may not have (INF-05).
  */
-export async function databaseReachable(databaseUrl: string, timeoutMs = 1000): Promise<void> {
-  const client = new pg.Client({ connectionString: databaseUrl, connectionTimeoutMillis: timeoutMs, query_timeout: timeoutMs });
-  client.on('error', () => {});
-  try {
-    await client.connect();
-    await client.query('SELECT 1');
-  } finally {
-    await client.end().catch(() => {});
-  }
+export function createDatabaseCheck(databaseUrl: string, timeoutMs = 1000): { run: () => Promise<void>; close: () => Promise<void> } {
+  let client: pg.Client | undefined;
+  const close = async () => { const c = client; client = undefined; await c?.end().catch(() => {}); };
+  const run = async () => {
+    try {
+      if (!client) {
+        const c = new pg.Client({ connectionString: databaseUrl, connectionTimeoutMillis: timeoutMs, query_timeout: timeoutMs });
+        c.on('error', () => { if (client === c) client = undefined; c.end().catch(() => {}); });
+        await c.connect();
+        client = c;
+      }
+      await client.query('SELECT 1');
+    } catch (err) {
+      const c = client;
+      client = undefined;
+      await c?.end().catch(() => {});
+      throw err;
+    }
+  };
+  return { run, close };
 }
+

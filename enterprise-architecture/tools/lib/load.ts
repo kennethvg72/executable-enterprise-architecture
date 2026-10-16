@@ -44,7 +44,8 @@ export interface Platform {
   /** How the pipeline installs the candidate's dependencies itself, from its lockfile, without running install scripts (SEC-13). */
   install?: string;
   /** Every check is mandatory unless marked optional: a mandatory check that can't run makes the stage INCOMPLETE. */
-  checks: { name: string; rule: string; run: string; needs: string; database?: boolean; optional?: boolean }[];
+  /** counts: "node-test" means the output is Node.js's test summary, and at least one test must have run. */
+  checks: { name: string; rule: string; run: string; needs: string; database?: boolean; optional?: boolean; counts?: 'node-test' }[];
   'required-evidence'?: string[];
 }
 
@@ -85,6 +86,7 @@ export function serviceFromManifest(manifest: Manifest, instances: Service['inst
     provides: manifest.provides ?? [],
     consumes: manifest.consumes ?? [],
     'peak-vcpu': manifest.runtime['peak-vcpu'],
+    ...(manifest.runtime['database-connections'] !== undefined ? { 'database-connections': manifest.runtime['database-connections'] } : {}),
     source,
   };
 }

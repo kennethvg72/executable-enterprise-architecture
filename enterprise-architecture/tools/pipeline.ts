@@ -17,9 +17,9 @@
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { verifyInfrastructure } from '../../infrastructure/tools/verify.ts';
 import { verifyNetwork } from '../../network/tools/verify.ts';
@@ -31,6 +31,7 @@ import { fail, failed, format, pass, skip, warn, type Result } from './lib/repor
 import { scanSecrets } from './scan-secrets.ts';
 import { validateManifest } from './validate-manifest.ts';
 import { verifyRunner } from './verify-runner.ts';
+import { GATE_INPUTS, judgeGateChanges } from './verify-gate-inputs.ts';
 
 interface Candidate { id: string; application: string; purpose: string }
 
@@ -56,11 +57,23 @@ function candidateEnv(): NodeJS.ProcessEnv {
   return Object.fromEntries(keep.filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]]));
 }
 
-/** A digest per tracked file of the architecture repository, to detect tampering. */
+/**
+ * A digest of every file in the architecture repository, tracked or not, to detect tampering.
+ * Not just what Git tracks: a planted file that nothing tracks can still be read.
+ */
 export function architectureDigest(root = REPO_ROOT): Map<string, string> {
-  const listed = spawnSync('git', ['ls-files', '-z'], { cwd: root, encoding: 'utf8' });
-  const files = listed.status === 0 ? listed.stdout.split('\0').filter(Boolean) : [];
-  return new Map(files.map((f) => [f, existsSync(join(root, f)) ? createHash('sha256').update(readFileSync(join(root, f))).digest('hex') : 'missing']));
+  const digests = new Map<string, string>();
+  const walk = (dir: string) => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === '.git' || entry.name === 'node_modules') continue;
+      const full = join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile()) digests.set(relative(root, full), createHash('sha256').update(readFileSync(full)).digest('hex'));
+      else digests.set(relative(root, full), `special file: ${entry.isSymbolicLink() ? 'symlink' : 'other'}`);
+    }
+  };
+  walk(root);
+  return digests;
 }
 
 export function diffDigests(before: Map<string, string>, after: Map<string, string>): string[] {
@@ -82,14 +95,21 @@ export function runPipeline(appDir: string, options: { candidateDir?: string | u
     : undefined;
 
   const intake: Result[] = [...validateManifest(appDir, manifest, { ...(options.today ? { today: options.today } : {}) })];
-  intake.push(checkFreeze(options.today ?? new Date(), manifest.resilience.class, candidate?.purpose));
+  // The freeze applies to the class production has: declaring a lower one in the candidate
+  // doesn't escape it, and lowering a class is itself something to review (DEL-05, RES-01).
+  const registeredClass = loadModel().services.get(manifest.application)?.class;
+  const rank = (c: string | undefined) => ({ A: 0, B: 1, C: 2 } as Record<string, number>)[c ?? 'C'] ?? 2;
+  const effectiveClass = rank(registeredClass) < rank(manifest.resilience.class) ? registeredClass! : manifest.resilience.class;
+  intake.push(checkFreeze(options.today ?? new Date(), effectiveClass, candidate?.purpose));
+  if (registeredClass && rank(manifest.resilience.class) > rank(registeredClass)) {
+    intake.push(warn('RES-01', `The candidate lowers ${manifest.application} from class ${registeredClass} to ${manifest.resilience.class}. That's the Problem Owner's decision, with a decision record; until it's in production, class ${registeredClass} applies.`));
+  }
   if (options.candidateDir && !candidate) intake.push(fail('INTAKE', `No candidate.yaml in ${options.candidateDir}.`));
   if (candidate && candidate.application !== manifest.application) intake.push(fail('INTAKE', `The candidate is for ${candidate.application}, not ${manifest.application}.`));
-  const commit = spawnSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: REPO_ROOT, encoding: 'utf8' }).stdout?.trim();
-  const dirty = spawnSync('git', ['status', '--porcelain'], { cwd: REPO_ROOT, encoding: 'utf8' }).stdout?.trim();
-  intake.push(!commit ? warn('AGT-04', 'The architecture is not a Git checkout: which version judged this candidate isn\'t recorded.')
-    : dirty ? warn('AGT-04', `Judged against architecture commit ${commit}, with uncommitted changes: not a version the Board approved.`)
-    : pass('AGT-04', `Judged against architecture commit ${commit}.`));
+  intake.push(...checkApprovedArchitecture(Object.keys(manifest.architecture ?? {})));
+  // SEC-14: the gate's own inputs, signed by the Board and Central IT. It needs the workforce IdP to
+  // say who is in which group, which this proof of concept doesn't have.
+  intake.push(...judgeGateChanges([{ commit: 'HEAD', files: GATE_INPUTS.filter((g) => !g.includes('*')), signers: [] }], undefined, options.today ?? new Date()));
   intake.push(...checkPinnedVersions(manifest.architecture ?? {}));
   sections.push(['Intake and manifest', intake]);
 
@@ -126,7 +146,7 @@ export function runPipeline(appDir: string, options: { candidateDir?: string | u
     // --isolated is an assertion. Check it: the hostile canary runs here first, with the same
     // environment the candidate gets, and finds what an earlier run left behind. Any escape, and
     // the candidate's code doesn't run at all.
-    const preflight = (options.preflight ?? (() => verifyRunner({ runs: ['preflight'], env: candidateEnv(), cleanup: false })))();
+    const preflight = (options.preflight ?? (() => verifyRunner({ phase: 'preflight', env: candidateEnv() })))();
     const escaped = preflight.filter((r) => r.status === 'fail');
     if (escaped.length) {
       app.push(fail('SEC-13', `This runner isn't isolated, so the candidate's code didn't run: ${escaped.map((r) => r.message).join(' ')}`, 'Run candidates only in a disposable runner that the hostile canary verifies (verify-runner.ts).'));
@@ -162,6 +182,8 @@ export function runPipeline(appDir: string, options: { candidateDir?: string | u
         app.push(r.ok
           ? pass(c.rule, `${c.name} exited successfully${claimed}.`)
           : fail(c.rule, `${c.name} failed${claimed || `:\n${r.output.trim().slice(-2000)}`}.`));
+        const ran = Number(/tests (\d+)/.exec(summary)?.[1] ?? '0');
+        if (r.ok && c.counts === 'node-test' && ran === 0) app.push(fail(c.rule, `${c.name} exited successfully, but no tests ran. A test command that runs nothing proves nothing.`));
         const skipped = Number(/skipped (\d+)/.exec(summary)?.[1] ?? '0');
         if (skipped) app.push(fail(c.rule, `${skipped} tests were skipped. Tests must not skip silently.`));
       }
@@ -184,6 +206,40 @@ export function runPipeline(appDir: string, options: { candidateDir?: string | u
   const all = sections.flatMap(([, r]) => r);
   const status: Status = failed(all) ? 'FAIL' : all.some((r) => r.status === 'skip') ? 'INCOMPLETE' : 'PASS';
   return { sections, status };
+}
+
+/** Where each architecture lives, and what in it is data the pipeline maintains rather than approved text. */
+const ARCHITECTURE_PATHS: Record<string, { dir: string; data: string[] }> = {
+  'enterprise-architecture': { dir: 'enterprise-architecture', data: ['enterprise-architecture/landscape', 'enterprise-architecture/governance/exceptions.yaml', 'enterprise-architecture/governance/versions.yaml', 'enterprise-architecture/governance/secret-scan-allowlist.yaml', 'enterprise-architecture/governance/proposals'] },
+  network: { dir: 'network', data: ['network/generated', 'network/observed'] },
+  infrastructure: { dir: 'infrastructure', data: ['infrastructure/generated'] },
+};
+const pathsOf = (name: string) => ARCHITECTURE_PATHS[name] ?? { dir: join('platforms', name).replace(/\\/g, '/'), data: [] };
+
+/**
+ * AGT-04 and OWN-04: the candidate is judged against exactly an approved version of each
+ * architecture it pins: the files of that architecture are the ones its version tag points to,
+ * with nothing changed, committed or not. Anything else can't produce a pass. (The data the
+ * pipeline maintains, like the landscape, isn't versioned text; two-person control covers it.)
+ */
+export function checkApprovedArchitecture(names: string[], root = REPO_ROOT): Result[] {
+  const git = (...args: string[]) => spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+  const head = git('rev-parse', '--short', 'HEAD');
+  if (head.status !== 0) return [skip('AGT-04', 'The architecture is not a Git checkout, so no approved version can be shown. Judge it against a checkout of the version tags.')];
+  return names.map((name) => {
+    const { dir, data } = pathsOf(name);
+    const version = checkoutVersion(name);
+    const tag = `${name}/v${version}`;
+    if (!version || git('rev-parse', '-q', '--verify', `refs/tags/${tag}`).status !== 0) return skip('AGT-04', `${name} ${version ?? '?'} has no tag ${tag}: it isn't an approved version.`);
+    const scope = ['--', dir, ...data.map((d) => `:(exclude)${d}`)];
+    const changed = git('diff', '--name-only', tag, ...scope).stdout.trim();
+    const uncommitted = git('status', '--porcelain', '--untracked-files=all', ...scope).stdout.trim();
+    if (changed || uncommitted) {
+      const files = [...changed.split('\n'), ...uncommitted.split('\n').map((l) => l.slice(3))].filter(Boolean);
+      return skip('AGT-04', `${name} differs from its approved version ${tag} (${files.slice(0, 5).join(', ')}${files.length > 5 ? ', ...' : ''}): not what the Board approved, so nothing judged against it can pass.`);
+    }
+    return pass('AGT-04', `Judged against ${name} ${version}, exactly as tagged ${tag} (commit ${head.stdout.trim()}).`);
+  });
 }
 
 /** The version of each architecture in this checkout, from its VERSION file. */
@@ -223,7 +279,12 @@ if (import.meta.main) {
   const { values, positionals } = parseArgs({ allowPositionals: true, options: { candidate: { type: 'string' }, today: { type: 'string' }, isolated: { type: 'boolean', default: false }, verbose: { type: 'boolean', default: false } } });
   const appDir = resolve(positionals[0] ?? '.');
   const candidateDir = values.candidate ? resolve(appDir, values.candidate) : undefined;
-  const { sections, status } = runPipeline(appDir, { candidateDir, isolated: values.isolated, ...(values.today ? { today: new Date(values.today) } : {}) });
+  const today = values.today ? new Date(`${values.today}T12:00:00Z`) : undefined;
+  if (values.today && (!/^\d{4}-\d{2}-\d{2}$/.test(values.today) || Number.isNaN(today!.getTime()))) {
+    console.error(`--today must be a date (YYYY-MM-DD), not "${values.today}".`);
+    process.exit(2);
+  }
+  const { sections, status } = runPipeline(appDir, { candidateDir, isolated: values.isolated, ...(today ? { today } : {}) });
   console.log(`# Deterministic stage: ${appDir.replace(REPO_ROOT, '').replace(/^[\\/]/, '')}\n`);
   for (const [title, results] of sections) console.log(format(title, results, { verbose: values.verbose }));
   const all = sections.flatMap(([, r]) => r);

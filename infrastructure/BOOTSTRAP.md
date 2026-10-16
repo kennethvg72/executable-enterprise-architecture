@@ -8,7 +8,7 @@ For an AI agent that has completed steps 2 to 4 of the [general bootstrap](../BO
    npm run verify
    node infrastructure/tools/simulate.ts
    ```
-   `npm run verify` must report `0 failed` for infrastructure, and the simulation must show **ok** for the direct fiber cut.
+   `npm run verify` must report `0 failed` for infrastructure (INCOMPLETE without HAProxy in the pinned version, as for the network), and the simulation must show **ok** for the direct fiber cut.
 2. **Read** [README.md](README.md), [standards.md](standards.md), [failure-scenarios.md](failure-scenarios.md), [make-or-buy.md](make-or-buy.md) and [agents/README.md](agents/README.md), and the central [agent rules of engagement](../enterprise-architecture/agents/README.md).
 3. **Report** what you checked and found, then ask what they'd like to change.
 

@@ -77,6 +77,10 @@ export interface Service {
   databases?: { name: string; owner: string }[];
   classification?: Classification;
   replication?: { synchronous: boolean; strict: boolean; promote: string; watchdog: string };
+  /** PostgreSQL's max_connections, for database clusters (INF-05). */
+  'max-connections'?: number;
+  /** Connections each instance's pool may open to its database (default 10). */
+  'database-connections'?: number;
   voting?: boolean;
   contained?: boolean;
   appliance?: boolean;
@@ -90,6 +94,8 @@ export interface PlatformFlow {
   from: string;
   to: string;
   port: number;
+  /** tcp unless said otherwise. Probes test TCP only; UDP is verified on the rules (DEL-06). */
+  protocol?: 'tcp' | 'udp';
   purpose: string;
 }
 
@@ -135,6 +141,8 @@ export interface Manifest {
     sites: string[];
     'instances-per-site': number;
     'peak-vcpu': number;
+    /** The pool's maximum per instance (DB_POOL_MAX), checked against the cluster's max_connections. */
+    'database-connections'?: number;
     capacity: { 'peak-requests-per-second': number; 'instance-requests-per-second': number };
     connectors?: string[];        // power-apps: the connectors the solution uses (PA-07)
     distribution?: string;        // android: managed-play | play (AND-01)
@@ -150,6 +158,8 @@ export interface Exception {
   id: string;
   application: string;
   rules: string[];
+  /** The text of the one finding it covers: a failure of its rules that doesn't contain it stays a failure. */
+  finding: string;
   reason: string;
   'compensating-controls': string;
   owner: string;

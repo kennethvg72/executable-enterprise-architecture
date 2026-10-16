@@ -19,13 +19,13 @@
 // probes show that reality agrees. Neither is enough on its own.
 
 import { connect } from 'node:net';
-import { readFileSync } from 'node:fs';
+import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { REPO_ROOT } from '../../enterprise-architecture/tools/lib/load.ts';
 import type { Probe } from './render.ts';
 
-type Outcome = 'open' | 'refused' | 'timeout' | 'error';
+export type Outcome = 'open' | 'refused' | 'timeout' | 'error';
 
 export function attempt(host: string, port: number, timeoutMs: number): Promise<Outcome> {
   return new Promise((resolve) => {
@@ -52,12 +52,19 @@ export async function runProbes(probes: Probe[], timeoutMs: number, concurrency 
 
 export type Verdict = 'PASS' | 'FAIL' | 'INCONCLUSIVE';
 
-export function classify(results: { probe: Probe; outcome: Outcome }[]) {
+/** The targets a set of results shows to be up: something reached them (open), or they answered (refused). */
+export const reached = (results: { probe: Probe; outcome: Outcome }[]) =>
+  new Set(results.filter((r) => r.outcome === 'open' || r.outcome === 'refused').map((r) => r.probe.to));
+
+/**
+ * A blocked probe that times out or errors proves nothing if the target host is simply down. It
+ * counts only with evidence, from the same run window, that the target was up: this vantage
+ * reached it, another vantage did (probe-report.ts), or monitoring saw it (--alive).
+ */
+export function classify(results: { probe: Probe; outcome: Outcome }[], evidence: Set<string> = new Set()) {
   const wrong = results.filter(({ probe, outcome }) => (probe.expect === 'open') !== (outcome === 'open'));
   const refused = results.filter(({ probe, outcome }) => probe.expect === 'blocked' && outcome === 'refused');
-  // A blocked probe that times out or errors proves nothing if the target host is simply down.
-  // It counts only if something else from here reached the same host (a positive control).
-  const alive = new Set(results.filter((r) => r.outcome === 'open' || r.outcome === 'refused').map((r) => r.probe.to));
+  const alive = new Set([...reached(results), ...evidence]);
   const inconclusive = results.filter(({ probe, outcome }) => probe.expect === 'blocked' && (outcome === 'timeout' || outcome === 'error') && !alive.has(probe.to));
   const verdict: Verdict = wrong.length ? 'FAIL' : inconclusive.length ? 'INCONCLUSIVE' : 'PASS';
   return { verdict, wrong, refused, inconclusive };
@@ -71,10 +78,14 @@ if (import.meta.main) {
       from: { type: 'string' },
       plan: { type: 'string', default: join(REPO_ROOT, 'network', 'generated', 'probes.json') },
       timeout: { type: 'string', default: '2000' },
+      // Liveness evidence from outside this vantage: a JSON list of addresses monitoring saw up.
+      alive: { type: 'string' },
+      // The raw results, for probe-report.ts to combine with the other vantages'.
+      out: { type: 'string' },
     },
   });
   if (!values.from) {
-    console.error('Usage: node probe.ts --from <this host\'s address> [--plan probes.json] [--timeout ms]');
+    console.error('Usage: node probe.ts --from <this host\'s address> [--plan probes.json] [--timeout ms] [--alive monitoring-up.json] [--out results.json]');
     process.exit(2);
   }
   const plan = (JSON.parse(readFileSync(values.plan!, 'utf8')) as Probe[]).filter((p) => p.from === values.from);
@@ -82,8 +93,11 @@ if (import.meta.main) {
     console.error(`No probes start from ${values.from}. Is it a vantage point in the plan?`);
     process.exit(2);
   }
+  const started = new Date().toISOString();
   const results = await runProbes(plan, Number(values.timeout));
-  const { verdict, wrong, refused, inconclusive } = classify(results);
+  if (values.out) writeFileSync(values.out, JSON.stringify({ from: values.from, started, finished: new Date().toISOString(), results }, null, 0));
+  const evidence = new Set<string>(values.alive ? JSON.parse(readFileSync(values.alive, 'utf8')) as string[] : []);
+  const { verdict, wrong, refused, inconclusive } = classify(results, evidence);
   for (const { probe } of inconclusive) {
     console.log(`INCONCLUSIVE ${probe.fromLabel} -> ${probe.toLabel} ${probe.to}:${probe.port}: timed out, but nothing shows ${probe.to} is up`);
   }

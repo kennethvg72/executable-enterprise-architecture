@@ -15,7 +15,9 @@ import { verifyNetwork } from '../../network/tools/verify.ts';
 import { verifyInfrastructure } from '../../infrastructure/tools/verify.ts';
 import { scanSecrets } from './scan-secrets.ts';
 import { validateManifest } from './validate-manifest.ts';
-import { checkPinnedVersions, runPipeline } from './pipeline.ts';
+import { checkApprovedArchitecture, checkPinnedVersions, runPipeline } from './pipeline.ts';
+import { EXPECTED, verifyRunner } from './verify-runner.ts';
+import { judgeGateChanges } from './verify-gate-inputs.ts';
 import { applyExceptions, exceptionProblems } from './lib/exceptions.ts';
 
 const APP = join(REPO_ROOT, 'enterprise-architecture', 'tools', 'fixtures', 'registered-app');
@@ -97,6 +99,7 @@ test('a landscape check that is still the template fails SIM-09, on every platfo
 test('staff APIs at the edge need a Technical Owner (OWN-03) and the workforce IdP (IAM-01)', () => {
   const m = clone(loadManifest(APP));
   m.exposure = 'staff-edge';
+  m.provides![0]!.via = 'edge-adc';   // what makes it staff-edge: published at the edge, not to the internet zone
   assert.ok(failures(validateManifest(APP, m)).includes('OWN-03'));
   m['technical-owner'] = 'filing-platform-team';
   assert.ok(!failures(validateManifest(APP, m)).includes('OWN-03'));
@@ -284,8 +287,9 @@ test('every command fails its own process when it finds a problem: automation re
     writeFileSync(join(dir, 'escape.canary.ts'), `import { test } from 'node:test';\nimport assert from 'node:assert/strict';\ntest('the internet is unreachable', () => { assert.equal(${escapes}, false, 'reached 1.1.1.1:443'); });\n`);
     return dir;
   };
-  assert.equal(exit([join(tools, 'verify-runner.ts'), '--canary', canary(true)]), 1, 'verify-runner, not isolated');
-  assert.equal(exit([join(tools, 'verify-runner.ts'), '--canary', canary(false)]), 0, 'verify-runner, isolated');
+  const expect = ['--expect', 'the internet is unreachable'];
+  assert.equal(exit([join(tools, 'verify-runner.ts'), '--canary', canary(true), ...expect]), 1, 'verify-runner, not isolated');
+  assert.equal(exit([join(tools, 'verify-runner.ts'), '--canary', canary(false), ...expect]), 0, 'verify-runner, isolated');
   const bad = mkdtempSync(join(tmpdir(), 'bad-'));
   const m = clone(loadManifest(APP));
   m['problem-owner'] = 'aquinn';
@@ -311,8 +315,10 @@ test('Board exceptions are validated before they cover anything, and cover only 
     ['no compensating controls', { 'compensating-controls': ' ' }],
   ];
   for (const [name, change] of broken) assert.ok(exceptionProblems({ ...real, ...change }, today).length > 0, `accepted: ${name}`);
-  const applied = applyExceptions([fail('DAT-02', 'Taxpayer identifiers in the warehouse.'), fail('DAT-01', 'No classification.')], [real]);
-  assert.deepEqual(applied.map((r) => [r.rule, r.status]), [['DAT-02', 'warn'], ['DAT-01', 'fail']]);
+  const applied = applyExceptions([fail('DAT-02', 'Taxpayer identifiers in the warehouse.'), fail('DAT-02', 'Full names copied to a spreadsheet.'), fail('DAT-01', 'No classification.')], [real]);
+  // Only the one finding it was granted for; another finding of the same rule still fails.
+  assert.deepEqual(applied.map((r) => [r.rule, r.status]), [['DAT-02', 'warn'], ['DAT-02', 'fail'], ['DAT-01', 'fail']]);
+  assert.ok(exceptionProblems({ ...real, finding: '' }, today).length > 0, 'accepted: an exception for a whole rule');
   assert.match(applied[0]!.message, /EXC-2026-003/);
   // Every exception the Board has granted is valid today.
   for (const e of loadExceptions()) assert.deepEqual(exceptionProblems(e, today), [], e.id);
@@ -322,4 +328,84 @@ test('a candidate is judged against the versions it pins, or the stage says it c
   assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '1.0.0' }).map((r) => r.status), ['pass']);
   assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '2.0.0' }).map((r) => r.status), ['skip']);
   assert.deepEqual(checkPinnedVersions({ 'no-such-architecture': '1.0.0' }).map((r) => r.status), ['skip']);
+});
+
+test('a canary run counts only when it finished and completed every attempt (SEC-13)', () => {
+  const canary = (body: string) => {
+    const dir = mkdtempSync(join(tmpdir(), 'canary-'));
+    writeFileSync(join(dir, 'escape.canary.ts'), `import { test } from 'node:test';\n${body}\n`);
+    return dir;
+  };
+  const counts = (dir: string) => !verifyRunner({ canary: dir, expected: ['one', 'two'] }).some((r) => r.status === 'fail');
+  assert.equal(counts(canary(`test('one', () => {});\ntest('two', () => {});`)), true);
+  // "ok 1", then the process dies before the rest of the attempts run.
+  assert.equal(counts(canary(`test('one', () => {});\ntest('two', () => { process.exit(0); });`)), false);
+  // An attempt that was skipped verified nothing.
+  assert.equal(counts(canary(`test('one', () => {});\ntest('two', { skip: true }, () => {});`)), false);
+  // The real canary must run every attempt of its phase.
+  assert.deepEqual(EXPECTED.preflight.slice(0, 5), EXPECTED.escape);
+});
+
+test('only an approved, unchanged architecture can judge a candidate (AGT-04)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'arch-'));
+  const git = (...args: string[]) => spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
+  git('init', '-q'); git('config', 'user.email', 'test@natax.example'); git('config', 'user.name', 'Test');
+  mkdirSync(join(dir, 'network'));
+  writeFileSync(join(dir, 'network', 'VERSION'), '1.0.0\n');
+  writeFileSync(join(dir, 'network', 'standards.md'), '### ZTN-01: Rule\n');
+  git('add', '-A'); git('commit', '-qm', 'v1'); git('tag', 'network/v1.0.0');
+  const status = () => checkApprovedArchitecture(['network'], dir).map((r) => r.status);
+  assert.deepEqual(status(), ['pass']);
+  // Edited and not committed: what the Board approved isn't what would judge.
+  writeFileSync(join(dir, 'network', 'standards.md'), '### ZTN-01: A weaker rule\n');
+  assert.deepEqual(status(), ['skip']);
+  // Committed, but not as a new approved version.
+  git('commit', '-qam', 'weaker'); assert.deepEqual(status(), ['skip']);
+  // A planted file nothing tracks.
+  git('reset', '-q', '--hard', 'network/v1.0.0');
+  writeFileSync(join(dir, 'network', 'extra-rules.md'), '### ZTN-99: Planted\n');
+  assert.deepEqual(status(), ['skip']);
+});
+
+test('a test command that runs no tests fails, and the freeze uses production\'s class (DEL-02, DEL-05)', () => {
+  // The registered fixture is class B in production; declaring class C mustn't escape the freeze.
+  const dir = mkdtempSync(join(tmpdir(), 'freeze-'));
+  const m = clone(loadManifest(APP));
+  m.resilience.class = 'C';
+  writeFileSync(join(dir, 'architecture.yaml'), stringify(m));
+  const { sections } = runPipeline(dir, { today: new Date('2027-04-20'), candidateDir: undefined });
+  const intake = sections[0]![1];
+  assert.ok(intake.some((r) => r.rule === 'DEL-05' && r.status !== 'pass'), 'class C declared, class B in production: still frozen');
+  assert.ok(intake.some((r) => r.rule === 'RES-01' && r.status === 'warn'));
+});
+
+test('exposure follows from what is published, and overrides are dependencies too (IAM-01, SEC-05)', () => {
+  const m = clone(loadManifest(APP));
+  m.provides![0]!.via = 'edge-adc';
+  m.provides![0]!.consumers = ['zone:internet'];
+  assert.ok(validateManifest(APP, m).some((r) => r.rule === 'IAM-01' && r.status === 'fail' && /makes it internet/.test(r.message)));
+  const dir = mkdtempSync(join(tmpdir(), 'overrides-'));
+  writeFileSync(join(dir, 'architecture.yaml'), stringify(loadManifest(APP)));
+  writeFileSync(join(dir, 'package.json'), JSON.stringify({ dependencies: { pg: '8.23.1' }, overrides: { 'pg-protocol': '*', semver: { '.': '7.6.3' } } }));
+  const found = checkDependencies(dir).filter((r) => r.status === 'fail').map((r) => r.message);
+  assert.ok(found.some((x) => /override for pg-protocol isn't pinned/.test(x)));
+  assert.ok(found.some((x) => /override for semver has no recorded reason/.test(x)));
+});
+
+test('the gate\'s inputs change only with the Board and Central IT, or by break-glass (SEC-14)', () => {
+  const now = new Date('2026-10-15T12:00:00Z');
+  const idp: Record<string, string[]> = { mellis: ['architecture-board'], jalvarez: ['central-it'], both: ['architecture-board', 'central-it'] };
+  const groupsOf = (who: string) => idp[who] ?? [];
+  const change = (signers: string[], files = ['enterprise-architecture/governance/exceptions.yaml'], breakGlass?: { reason: string; at: Date }) =>
+    ({ commit: 'abc123', files, signers, ...(breakGlass ? { breakGlass } : {}) });
+  const status = (c: ReturnType<typeof change>) => judgeGateChanges([c], groupsOf, now)[0]!.status;
+  assert.equal(status(change(['mellis', 'jalvarez'])), 'pass');
+  assert.equal(status(change(['jalvarez'])), 'fail', 'Central IT alone');
+  assert.equal(status(change(['both'])), 'fail', 'one person in both groups is still one person');
+  assert.equal(status(change(['jalvarez'], undefined, { reason: 'expiring exception at 02:00, deadline night', at: new Date('2026-10-15T02:00:00Z') })), 'warn');
+  assert.equal(status(change(['jalvarez'], undefined, { reason: 'old', at: new Date('2026-10-10T02:00:00Z') })), 'fail');
+  assert.equal(status(change(['jalvarez'], ['platforms/power-apps/approved-connectors.yaml'])), 'fail');
+  assert.equal(status(change(['jalvarez'], ['platforms/power-apps/standards.md'])), 'pass', 'not a gate input: versioned architecture, approved by the Board as a version');
+  // Without the IdP, nobody can say who signed: not a pass.
+  assert.equal(judgeGateChanges([change(['mellis', 'jalvarez'])], undefined, now)[0]!.status, 'skip');
 });

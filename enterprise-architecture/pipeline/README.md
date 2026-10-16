@@ -74,6 +74,17 @@ Separating "approve" from "deploy" is separation of duties: neither function can
 
 Code from release candidates runs only in disposable, unprivileged runners ([SEC-13](../principles/security.md#sec-13-the-pipeline-treats-every-release-candidate-as-hostile)), never where verdicts are written or deployment credentials live. A hostile canary verifies that isolation, and `pipeline.ts` runs candidate code only with `--isolated`.
 
+## When the AI provider is down
+
+The Governance Agent depends on an AI provider ([AGT-11](../principles/ai-agents.md#agt-11-the-ai-providers-are-governed-like-any-other-dependency)). If the provider is unavailable when a fix must ship (a security finding rated *Critical*, or a production incident during the peak freeze), the **emergency lane** applies:
+
+1. The candidate's purpose is `security-fix` or `fix`, and the diff is limited to that fix.
+2. Every deterministic check runs and passes, the authorities included. Nothing in the emergency lane is skipped.
+3. Two people approve it in the Governance Agent's place: an Architecture Board member and Central IT's on-call engineer, distinct identities, each signing the verdict.
+4. The verdict says it was the emergency lane, and the Governance Agent reviews the release as soon as the provider is back. A finding then is handled like any other, with the release rolled back if needed.
+
+The lane is for when the provider is down, not when its answer is inconvenient.
+
 ## Running the pipeline here
 
 To run the pipeline against an application in this repository, start a **separate** agent session, preferably on a different model family from the one that built the application ([AGT-03](../principles/ai-agents.md#agt-03-use-different-models-for-independence)), and give it this instruction:
@@ -105,6 +116,14 @@ node enterprise-architecture/tools/verify-runner.ts    # inside the runner: ever
 ```
 
 Run on a laptop, the canary shows what a release candidate could do there: read its credentials, write outside the workspace, reach the internet. That's why `--isolated` exists. In this proof of concept there is no runner, so a Governance Agent session runs the application's checks only inside its own verified sandbox (BOOTSTRAP, step 4), and says so in its verdict.
+
+What has to be true for the stage to pass, beyond the checks themselves:
+
+- **The architecture is an approved version.** Every architecture the candidate pins must match its version tag exactly (`network/v1.0.0`, ...), with nothing changed, committed or not. Otherwise the stage is INCOMPLETE: it can't judge against rules nobody approved.
+- **The authorities ran.** Network and infrastructure checks have a fast reader tier and an authority tier ([DEL-06](../principles/delivery.md#del-06-checks-verify-the-output-not-the-intent-that-produced-it)). Without Linux and the pinned tool versions, the authorities can't run and the stage is INCOMPLETE.
+- **The gate's inputs are signed** by the Board and Central IT ([SEC-14](../principles/security.md#sec-14-the-gates-inputs-change-only-with-two-people)). That needs the workforce IdP, so here it is reported as not run.
+
+On a laptop, then, the honest result is INCOMPLETE. The parts that did run still show their findings.
 
 In this proof of concept, some things are simulated:
 - The Problem Owner's signed "Release" is replaced by a file in the repository, and the verdict store by the verdict file next to the candidate. The Governance Agent says so in its verdict.
