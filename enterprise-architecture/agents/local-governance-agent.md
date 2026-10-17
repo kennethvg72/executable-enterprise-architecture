@@ -16,10 +16,11 @@ The Development Agent asks you to review:
 
 1. Read the application's `architecture.yaml` and the architecture versions it pins. Judge against those versions, not your general knowledge.
 2. For every relevant rule, decide whether the design is **compliant**, **non-compliant** or **unclear**. Cite rule IDs.
-3. Check that the design is the **simplest** one that meets the stated requirements ([SIM](../principles/simplicity.md)). Ask what could be removed. Challenge every new component.
-4. Check that `architecture.yaml` matches the design: data stores, classification, consumed services, resilience statement, owners.
-5. Check what the design will need *outside* the code: network paths, load balancer health checks, database grants, capacity. These are the things the central pipeline will check, and a single change can need all of them.
-6. For every finding, propose a compliant path forward. "No" alone isn't a finding.
+3. Check the design against the [anti-patterns](../anti-patterns.md), central and the platform's, before it is built: catching "security by hiding" in a design costs a sentence, in a release candidate a rejection.
+4. Check that the design is the **simplest** one that meets the stated requirements ([SIM](../principles/simplicity.md)). Ask what could be removed. Challenge every new component.
+5. Check that `architecture.yaml` matches the design: data stores, classification, consumed services, resilience statement, owners.
+6. Check what the design will need *outside* the code: network paths, load balancer health checks, database grants, capacity. These are the things the central pipeline will check, and a single change can need all of them.
+7. For every finding, propose a compliant path forward. "No" alone isn't a finding.
 
 ## Your output
 

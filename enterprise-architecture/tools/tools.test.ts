@@ -5,7 +5,7 @@ process.env.NATAX_AUTHORITIES = 'off';
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -21,7 +21,7 @@ import { validateManifest } from './validate-manifest.ts';
 import { checkApprovedArchitecture, checkPinnedVersions, runPipeline } from './pipeline.ts';
 import { EXPECTED, verifyRunner } from './verify-runner.ts';
 import { judgeGateChanges } from './verify-gate-inputs.ts';
-import { applyExceptions, exceptionProblems } from './lib/exceptions.ts';
+import { applyExceptions, exceptionProblems, ruleIds } from './lib/exceptions.ts';
 
 const APP = join(REPO_ROOT, 'enterprise-architecture', 'tools', 'fixtures', 'registered-app');
 const failures = (results: { status: string; rule: string }[]) => results.filter((r) => r.status === 'fail').map((r) => r.rule);
@@ -411,4 +411,28 @@ test('the gate\'s inputs change only with the Board and Central IT, or by break-
   assert.equal(status(change(['jalvarez'], ['platforms/power-apps/standards.md'])), 'pass', 'not a gate input: versioned architecture, approved by the Board as a version');
   // Without the IdP, nobody can say who signed: not a pass.
   assert.equal(judgeGateChanges([change(['mellis', 'jalvarez'])], undefined, now)[0]!.status, 'skip');
+});
+
+test('every anti-pattern breaks a rule that exists, and has a regression sample for the Governance Agent', () => {
+  const catalogs = ['enterprise-architecture/anti-patterns.md', 'platforms/typescript-web/anti-patterns.md', 'platforms/power-apps/anti-patterns.md', 'platforms/android/anti-patterns.md'];
+  const rules = ruleIds();
+  const regression = join(REPO_ROOT, 'enterprise-architecture', 'pipeline', 'regression');
+  const entries = catalogs.flatMap((c) => readFileSync(join(REPO_ROOT, c), 'utf8').split(/^### /m).slice(1).map((block) => ({ catalog: c, id: block.split(':')[0]!, block })));
+  assert.ok(entries.length >= 20);
+  for (const e of entries) {
+    const breaks = /^\*\*Breaks\.\*\* (.+)$/m.exec(e.block)?.[1] ?? '';
+    const cited = [...breaks.matchAll(/\[([A-Z]{2,4}-\d{2})\]/g)].map((m) => m[1]!);
+    assert.ok(cited.length > 0, `${e.id} cites no rule: an anti-pattern without a rule is a missing rule`);
+    for (const r of cited) assert.ok(rules.has(r), `${e.id} cites ${r}, which doesn't exist`);
+    for (const part of ['Looks like', 'Why it hurts', 'Instead']) assert.ok(e.block.includes(`**${part}.**`), `${e.id} has no "${part}"`);
+    const sample = join(regression, `${e.id}.md`);
+    assert.ok(existsSync(sample), `${e.id} has no regression sample`);
+    const text = readFileSync(sample, 'utf8');
+    assert.match(text, /^Expected verdict: rejected$/m, `${e.id}'s sample has no expected verdict`);
+    const expected = (/^Expected rules: (.+)$/m.exec(text)?.[1] ?? '').split(/,\s*/).filter(Boolean);
+    assert.ok(expected.length && expected.every((r) => cited.includes(r)), `${e.id}'s sample expects ${expected.join(', ')}, not rules the anti-pattern cites`);
+  }
+  // And no sample without an anti-pattern: the set and the catalog stay one thing.
+  const ids = new Set(entries.map((e) => e.id));
+  for (const f of readdirSync(regression).filter((f) => /^AP-.*\.md$/.test(f))) assert.ok(ids.has(f.replace(/\.md$/, '')), `${f} has no anti-pattern`);
 });

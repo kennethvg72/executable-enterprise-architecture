@@ -56,7 +56,7 @@ At NATAX, AI agents design, build, test and govern solutions. They are effective
 **Rule.** The central agents (Governance and Security) run on AI providers that see every diff and much of the landscape. They are dependencies the Board accepts, not tools someone picked:
 - **In the landscape.** Each provider is a registered service with a Problem Owner, its data handling and its region on record.
 - **Pinned models.** The exact model versions are pinned in [pipeline/models.yaml](../pipeline/models.yaml), a gate input ([SEC-14](security.md#sec-14-the-gates-inputs-change-only-with-two-people)). A model change is a release of the pipeline.
-- **A regression set.** Past candidates with known verdicts, approved and rejected, are judged again by a new model before it is pinned. A verdict that changes without an architecture change is a finding to explain before the model is used.
+- **A regression set.** Past candidates with known verdicts, approved and rejected, and a sample of every [anti-pattern](../anti-patterns.md), are judged again by a new model before it is pinned. A verdict that changes without an architecture change is a finding to explain before the model is used.
 - **Reproducible verdicts.** Every verdict records the model version, the hash of the instructions the agent read, the hash of the transcript, the architecture tags and the candidate's digest ([verdict.md](../pipeline/verdict.md)).
 - **An emergency lane.** When the provider is down, a security fix can still ship ([pipeline](../pipeline/README.md#when-the-ai-provider-is-down)).
 **Why.** Microsoft 365 gets a Board-accepted dependency; the component that approves production deserves at least the same. A silently changed model is a silently changed gate.

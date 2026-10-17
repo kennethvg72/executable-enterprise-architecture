@@ -13,7 +13,8 @@ The Board asks an agent (preferably on a different model from the one used last 
 5. **`review` rules that should be `test` rules** ([AGT-10](../principles/ai-agents.md#agt-10-deterministic-where-it-must-be)). If agents keep judging a rule the same way, it can probably be checked deterministically.
 6. **Unenforced rules**: rules that no check covers and no review cites.
 7. **Gaps**: recurring Governance Agent findings that start with "no rule covers this, but...".
-8. **Simplification**: rules, defaults or components that could be removed ([SIM-08](../principles/simplicity.md#sim-08-simplification-is-normal-work)).
+8. **Anti-patterns**: findings that recur across verdicts, reviews and escalations become entries in the [catalog](../anti-patterns.md), each citing the rule it breaks and with a sample in the [regression set](../pipeline/regression/README.md). An entry that can be recognized mechanically becomes a check instead ([AGT-10](../principles/ai-agents.md#agt-10-deterministic-where-it-must-be)), and one that recurs in spite of the catalog suggests the rule, or the platform's template, should change.
+9. **Simplification**: rules, defaults or components that could be removed ([SIM-08](../principles/simplicity.md#sim-08-simplification-is-normal-work)).
 
 The agent writes its findings as a proposal. The Board reviews it, decides, and the accepted changes become a new version.
 

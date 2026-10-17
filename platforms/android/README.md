@@ -20,6 +20,7 @@ An Android app is almost always two applications: the app, and its backend API. 
 | | |
 |---|---|
 | [standards.md](standards.md) | The rules for this platform (AND-xx) |
+| [anti-patterns.md](anti-patterns.md) | How the Android standards are usually broken, and what to do instead |
 | [platform.yaml](platform.yaml) | The limits the pipeline enforces, its checks, and the evidence it needs |
 | [approved-dependencies.yaml](approved-dependencies.yaml) | The approved libraries |
 | [BOOTSTRAP.md](BOOTSTRAP.md) | Setting up to build an Android app |

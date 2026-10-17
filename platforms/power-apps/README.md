@@ -21,6 +21,7 @@ Version: [VERSION](VERSION). Limits: [platform.yaml](platform.yaml). Governed by
 | | |
 |---|---|
 | [standards.md](standards.md) | The rules for this platform (PA-xx) |
+| [anti-patterns.md](anti-patterns.md) | How the Power Apps standards are usually broken, and what to do instead |
 | [platform.yaml](platform.yaml) | The limits the pipeline enforces |
 | [approved-connectors.yaml](approved-connectors.yaml) | Connector classification, from which the DLP policies are generated |
 | [BOOTSTRAP.md](BOOTSTRAP.md) | Setting up to build a Power App |

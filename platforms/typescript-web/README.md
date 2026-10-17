@@ -12,6 +12,7 @@ Version: [VERSION](VERSION). Limits: [platform.yaml](platform.yaml). Governed by
 |---|---|
 | [BOOTSTRAP.md](BOOTSTRAP.md) | From the general bootstrap to a working environment: Linux (WSL on Windows), Node.js, PostgreSQL, the template |
 | [standards.md](standards.md) | The rules for this platform (TS-xx) |
+| [anti-patterns.md](anti-patterns.md) | How the TypeScript standards are usually broken, and what to do instead |
 | [platform.yaml](platform.yaml) | The limits and checks the pipeline enforces |
 | [approved-dependencies.yaml](approved-dependencies.yaml) | The five approved dependencies. Anything else needs a reason. |
 | [agents/](agents/) | What the Development, Test, Local Governance and Security Agents do on this platform |

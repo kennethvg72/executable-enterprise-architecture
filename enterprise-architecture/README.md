@@ -13,6 +13,7 @@ Version: see [VERSION](VERSION). Status of every version: [governance/versions.y
 | Folder | What it holds |
 |---|---|
 | [principles/](principles/) | The rules. One file per concern, each rule with an ID, a rationale and how it is verified. |
+| [anti-patterns.md](anti-patterns.md) | How the rules are usually broken, recognizably, and what to do instead. Each one cites its rule and has a sample the Governance Agent must reject. |
 | [agents/](agents/README.md) | The roles, human and AI, and their rules of engagement. Who can overrule whom (mostly: nobody). |
 | [pipeline/](pipeline/README.md) | The central release pipeline: the only way to change production. |
 | [governance/](governance/README.md) | How this architecture changes: the Architecture Board, versions, escalations, exceptions. |
