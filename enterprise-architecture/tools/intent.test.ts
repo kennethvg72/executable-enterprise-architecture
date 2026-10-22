@@ -128,3 +128,54 @@ test('unresolved contradictions are flagged for the Governance Agent; 1.x isn\'t
   writeFileSync(join(noGit.dir, 'docs', 'reviews', '2026-10-22-intent-drift.md'), report('abc..def', ['R-001', 'R-002', 'Q-001', 'D-0001']));
   assert.equal(status(checkIntent(noGit.dir)), 'incomplete');
 });
+
+test('from 3.0.0, every request in force says why: its own, or a goal\'s (AGT-12)', () => {
+  const a = app('3.0.0');
+  const text = `# Requirements
+
+## Goals
+
+| ID | Goal | Why |
+|---|---|---|
+| G-1 | Customers hear about a rejection within a day | A late correction can cost them the filing deadline. |
+| G-2 | Fewer calls to support | not given (Q-001) |
+
+## Requirements log
+
+| ID | Date | Entry | Why | Tests |
+|---|---|---|---|---|
+| R-001 | 2026-10-01 | Agents see rejections grouped by error code. | One fix often solves a whole group. | |
+| R-002 | 2026-10-02 | Leads can release another agent's claim. | G-1 | |
+| R-003 | 2026-10-03 | Show the tax year in the queue. | not given (Q-002) | |
+| R-004 | 2026-10-04 | Export the queue to a spreadsheet. | G-9 | |
+| R-005 | 2026-10-05 | Deprecates R-001: grouping by tax year instead. | | |
+
+## Open questions
+
+| ID | Date | Question | Answered by |
+|---|---|---|---|
+| Q-001 | 2026-10-02 | Why does G-2 matter? | |
+| Q-002 | 2026-10-03 | Why should the queue show the tax year? | |
+`;
+  writeFileSync(join(a.dir, 'docs', 'requirements.md'), text);
+  const { withoutWhy } = intentInForce(a.dir);
+  // R-001 is withdrawn; R-002 cites a goal with a reason: both fine.
+  assert.deepEqual(withoutWhy.map((w) => w.split(' ')[0]), ['G-2', 'R-003', 'R-004', 'R-005']);
+  assert.match(withoutWhy.join(), /R-003 \(reason recorded as not given\)/);
+  assert.match(withoutWhy.join(), /R-004 \(cites G-9/);
+  // A warning while working, a failure for a release candidate.
+  a.git('add', '-A'); a.git('commit', '-qm', 'intent');
+  const head = a.git('rev-parse', 'HEAD');
+  writeFileSync(join(a.dir, 'docs', 'reviews', '2026-10-22-intent-drift.md'), report(`${a.first}..${head}`, ['G-1', 'G-2', 'R-002', 'R-003', 'R-004', 'R-005', 'Q-001', 'Q-002', 'D-0001']));
+  a.git('add', '-A'); a.git('commit', '-qm', 'drift review');
+  const local = checkIntent(a.dir).filter((r) => /without a reason/.test(r.message));
+  assert.deepEqual(local.map((r) => r.status), ['warn']);
+  mkdirSync(join(a.dir, 'releases', 'rc-1'), { recursive: true });
+  writeFileSync(join(a.dir, 'releases', 'rc-1', 'candidate.yaml'), stringify({ commit: a.git('rev-parse', 'HEAD'), evidence: { 'intent-drift': 'docs/reviews/2026-10-22-intent-drift.md' } }));
+  const release = checkIntent(a.dir, { candidateDir: join(a.dir, 'releases', 'rc-1') }).filter((r) => /without a reason/.test(r.message));
+  assert.deepEqual(release.map((r) => r.status), ['fail']);
+  // 2.x isn't bound by it yet.
+  const old = app('2.0.0');
+  writeFileSync(join(old.dir, 'docs', 'requirements.md'), text);
+  assert.ok(!checkIntent(old.dir).some((r) => /without a reason/.test(r.message)));
+});

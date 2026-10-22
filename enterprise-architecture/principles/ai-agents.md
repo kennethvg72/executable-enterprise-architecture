@@ -64,13 +64,18 @@ At NATAX, AI agents design, build, test and govern solutions. They are effective
 
 ### AGT-12: Intent stays in force until it is withdrawn
 **Rule.** Intent is recorded in the application's repository, each item with an ID:
-- requirements (R-), in `docs/requirements.md`;
+- goals (G-) and requirements (R-), in `docs/requirements.md`;
 - decisions (D-, the decision record's number);
 - open questions (Q-);
 - escalations (E-).
 
 A requirement or decision stays in force until a record explicitly deprecates or supersedes it. Silence is not deprecation.
 
+**Every request says why.** Each requirement has a reason, or cites a goal that has one. Deprecations and supersessions carry their own reason too.
+- **The Why is the Problem Owner's, never an agent's.** An agent never writes a reason the Problem Owner didn't give.
+- **A missing reason is recorded as missing**, "not given", with an open question (Q-) that asks for it.
+- **Goals are a short numbered list** at the top of the requirements, each with its own Why. A request may cite one instead of stating a reason.
+
 Before every release candidate, the Local Governance Agent reviews the whole recorded intent against the implementation: every item in force, not only the latest requests ([intent-drift review](../agents/local-governance-agent.md#the-intent-drift-review)). Quick iterations for testing don't need it; a release candidate does.
-**Why.** Agents weigh recent requests heavily, and can break earlier intent that was never withdrawn, by building exactly what was asked this week. The deterministic checks can't see that: intent isn't a rule. Recorded intent and a reviewer tasked with re-reading all of it can. Drift then becomes a decision, an explicit deprecation, instead of an accident.
-**Verified by.** `review`: the drift report, read by the Governance Agent, who re-checks a few in-force items itself. `test`: the pipeline refuses a release candidate without a drift report for its commit range, with a report older than the latest change to the recorded intent, or with a report whose inventory misses an item in force.
+**Why.** Agents weigh recent requests heavily, and can break earlier intent that was never withdrawn, by building exactly what was asked this week. The deterministic checks can't see that: intent isn't a rule. Recorded intent and a reviewer tasked with re-reading all of it can. Drift then becomes a decision, an explicit deprecation, instead of an accident. Without the reason, though, intent can only be checked to the letter; and a reason an agent supplied would make the review agree with the agent.
+**Verified by.** `review`: the drift report, read by the Governance Agent, who re-checks a few in-force items itself. `test`: the pipeline refuses a release candidate without a drift report for its commit range, with a report older than the latest change to the recorded intent, or with a report whose inventory misses an item in force. It also flags requests in force with neither a reason nor a goal that exists: a warning when run locally, a failure for a release candidate.

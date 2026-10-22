@@ -2,9 +2,11 @@
 // checks only that the review happened, is current and covered everything:
 // - a drift report exists for the candidate;
 // - nothing changed the recorded intent after the commit it reviewed;
-// - its inventory lists every item in force: requirements not deprecated or superseded, decisions
-//   not superseded, open questions, escalations not answered.
+// - its inventory lists every item in force: goals and requirements not deprecated or superseded,
+//   decisions not superseded, open questions, escalations not answered.
 // It also lists unresolved contradiction and letter-not-spirit findings, for the Governance Agent.
+// From 3.0.0 it flags goals and requests in force without a reason (the Problem Owner's, or a goal's):
+// a warning when run locally, a failure for a release candidate (--candidate).
 //
 // Usage: node enterprise-architecture/tools/check-intent.ts <application repository> [--candidate releases/<id>]
 
@@ -31,24 +33,47 @@ function tableAfter(text: string, heading: string): string[][] {
   return rows;
 }
 
-/** Every item of recorded intent that is in force: an item stays in force until a record withdraws it. */
-export function intentInForce(appDir: string): { inForce: string[]; problems: string[] } {
+/**
+ * Every item of recorded intent that is in force: an item stays in force until a record withdraws
+ * it. Also every goal or request in force without a reason: neither its own Why (the Problem
+ * Owner's) nor a goal that exists and has one. "not given" is a recorded absence, still without one.
+ */
+export function intentInForce(appDir: string): { inForce: string[]; problems: string[]; withoutWhy: string[] } {
   const problems: string[] = [];
   const inForce: string[] = [];
+  const withoutWhy: string[] = [];
   const reqFile = join(appDir, 'docs', 'requirements.md');
   if (existsSync(reqFile)) {
     const text = readFileSync(reqFile, 'utf8');
+    const goals = tableAfter(text, 'Goals').filter((r) => /^G-\d+$/.test(r[0] ?? ''));
     const rows = tableAfter(text, 'Requirements log').filter((r) => /^R-\d+$/.test(r[0] ?? ''));
     const ids = rows.map((r) => r[0]!);
-    const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
-    if (dupes.length) problems.push(`requirement IDs used twice: ${[...new Set(dupes)].join(', ')}`);
-    // "Deprecates R-003:" or "Supersedes R-003, R-004:" withdraws them.
+    const goalIds = goals.map((g) => g[0]!);
+    for (const list of [ids, goalIds]) {
+      const dupes = list.filter((id, i) => list.indexOf(id) !== i);
+      if (dupes.length) problems.push(`IDs used twice: ${[...new Set(dupes)].join(', ')}`);
+    }
+    // "Deprecates R-003:" or "Supersedes R-003, G-2:" withdraws them.
     const withdrawn = new Set(rows.flatMap((r) => {
-      const m = /^(?:Deprecates|Supersedes) ((?:R-\d+(?:,\s*)?)+)/.exec(r[2] ?? '');
+      const m = /^(?:Deprecates|Supersedes) ((?:[RG]-\d+(?:,\s*)?)+)/.exec(r[2] ?? '');
       return m ? m[1]!.split(/,\s*/).filter(Boolean) : [];
     }));
-    for (const w of withdrawn) if (!ids.includes(w)) problems.push(`${w} is withdrawn, but was never recorded`);
-    inForce.push(...ids.filter((id) => !withdrawn.has(id)));
+    for (const w of withdrawn) if (!ids.includes(w) && !goalIds.includes(w)) problems.push(`${w} is withdrawn, but was never recorded`);
+    const has = (why: string | undefined) => !!why && why.trim() !== '' && !/^not given\b/i.test(why.trim());
+    const liveGoals = new Map(goals.filter((g) => !withdrawn.has(g[0]!)).map((g) => [g[0]!, g[2]]));
+    for (const [id, why] of liveGoals) {
+      inForce.push(id);
+      if (!has(why)) withoutWhy.push(`${id} (a goal without its own reason)`);
+    }
+    for (const r of rows.filter((x) => !withdrawn.has(x[0]!))) {
+      inForce.push(r[0]!);
+      const why = r[3];
+      if (!has(why)) { withoutWhy.push(`${r[0]} (${/^not given/i.test(why?.trim() ?? '') ? 'reason recorded as not given' : 'no reason'})`); continue; }
+      // A reason that only cites goals: each must exist, be in force, and have its own reason.
+      const cited = why!.match(/\bG-\d+\b/g) ?? [];
+      const onlyGoals = why!.replace(/\bG-\d+\b|[,;\s]|\band\b/gi, '') === '';
+      if (onlyGoals && cited.some((g) => !liveGoals.has(g) || !has(liveGoals.get(g)))) withoutWhy.push(`${r[0]} (cites ${cited.join(', ')}, which isn't a goal in force with a reason)`);
+    }
     for (const q of tableAfter(text, 'Open questions').filter((r) => /^Q-\d+$/.test(r[0] ?? ''))) {
       if (!(q[3] ?? '').trim()) inForce.push(q[0]!);
     }
@@ -63,7 +88,7 @@ export function intentInForce(appDir: string): { inForce: string[]; problems: st
   };
   records('decisions', 'D', /^superseded by\b/i);
   records('escalations', 'E', /^(answered|closed)\b/i);
-  return { inForce, problems };
+  return { inForce, problems, withoutWhy };
 }
 
 /** The drift report for a candidate: named in its evidence, or the latest in docs/reviews/. */
@@ -78,11 +103,18 @@ export function findDriftReport(appDir: string, candidateDir?: string): string |
 
 export function checkIntent(appDir: string, options: { candidateDir?: string | undefined } = {}): Result[] {
   const pinned = String(loadManifest(appDir).architecture?.['enterprise-architecture'] ?? '0');
-  if (Number(pinned.split('.')[0]) < 2) return [pass('AGT-12', `Pins enterprise-architecture ${pinned}: the intent-drift review applies from 2.0.0.`)];
+  const major = Number(pinned.split('.')[0]);
+  if (major < 2) return [pass('AGT-12', `Pins enterprise-architecture ${pinned}: the intent-drift review applies from 2.0.0.`)];
 
   const results: Result[] = [];
-  const { inForce, problems } = intentInForce(appDir);
+  const { inForce, problems, withoutWhy } = intentInForce(appDir);
   for (const p of problems) results.push(fail('AGT-12', `The recorded intent is inconsistent: ${p}.`, 'Requirements are append-only: fix it with a new entry, never by editing an old one.'));
+  // From 3.0.0: every request in force says why. A warning while working; a failure for a release candidate.
+  if (major >= 3 && withoutWhy.length) {
+    const message = `${withoutWhy.length} item(s) in force without a reason: ${withoutWhy.join(', ')}. The reason is the Problem Owner's, never an agent's.`;
+    const fix = 'Ask the Problem Owner why, or which goal it serves, and record their answer; until then, "not given" with an open question.';
+    results.push(options.candidateDir ? fail('AGT-12', message, fix) : warn('AGT-12', `${message} A release candidate will be refused until each has one.`, fix));
+  }
   const file = findDriftReport(appDir, options.candidateDir);
   if (!file) return [...results, fail('AGT-12', 'No intent-drift report for this candidate.', 'The Local Governance Agent re-reads the whole recorded intent against the implementation and writes the report (templates/intent-drift-report.md).')];
   const text = readFileSync(file, 'utf8');

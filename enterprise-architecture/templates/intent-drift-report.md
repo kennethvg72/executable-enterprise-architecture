@@ -19,16 +19,17 @@ You change nothing in the application yourself.
 
 ## Inventory
 
-Every item in force: requirements not deprecated or superseded, decisions not superseded, open questions, escalations not answered. One row each.
+Every item in force: goals and requirements not deprecated or superseded, decisions not superseded, open questions, escalations not answered. One row each.
 
 | ID | What it says, briefly | Status | Evidence |
 |---|---|---|---|
+| G-1 | | in force | |
 | R-001 | | satisfied, tested | test/... |
 | R-002 | | satisfied, untested | src/... |
 | D-0001 | | finding F-1 | |
 | Q-001 | | open | |
 
-Status is one of: satisfied, tested (a test would fail if it broke) · satisfied, untested · finding F-n · open (questions and escalations).
+Status is one of: satisfied, tested (a test would fail if it broke) · satisfied, untested · finding F-n · open (questions and escalations) · in force (goals, judged through the requests that cite them).
 
 ## Findings
 

@@ -12,36 +12,53 @@ architectures:
       proposal: enterprise-architecture/governance/proposals/2026-001-deadline-night-coverage.md
       note: Its change was released in 2.0.0.
     - version: 2.0.0
+      status: deprecated
+      activated: 2026-10-22
+      decommission-date: 2027-06-01
+      proposal: enterprise-architecture/governance/proposals/2026-002-intent-drift-review.md
+    - version: 3.0.0
       status: active
       activated: 2026-10-22
-      proposal: enterprise-architecture/governance/proposals/2026-002-intent-drift-review.md
+      proposal: enterprise-architecture/governance/proposals/2026-003-every-request-says-why.md
 
   typescript-web:
     - version: 1.0.0
-      status: superseded            # by 1.1.0, a minor version: applications pinning 1.0.0 pass as if they pinned 1.1.0
+      status: superseded            # by 1.2.0, a minor version: applications pinning it pass as if they pinned 1.2.0
       activated: 2026-10-14
     - version: 1.1.0
-      status: active
+      status: superseded
       activated: 2026-10-22
       proposal: enterprise-architecture/governance/proposals/2026-002-intent-drift-review.md
+    - version: 1.2.0
+      status: active
+      activated: 2026-10-22
+      proposal: enterprise-architecture/governance/proposals/2026-003-every-request-says-why.md
 
   power-apps:
     - version: 1.0.0
-      status: superseded            # by 1.1.0, a minor version: applications pinning 1.0.0 pass as if they pinned 1.1.0
+      status: superseded            # by 1.2.0, a minor version: applications pinning it pass as if they pinned 1.2.0
       activated: 2026-10-14
     - version: 1.1.0
-      status: active
+      status: superseded
       activated: 2026-10-22
       proposal: enterprise-architecture/governance/proposals/2026-002-intent-drift-review.md
+    - version: 1.2.0
+      status: active
+      activated: 2026-10-22
+      proposal: enterprise-architecture/governance/proposals/2026-003-every-request-says-why.md
 
   android:
     - version: 1.0.0
-      status: superseded            # by 1.1.0, a minor version: applications pinning 1.0.0 pass as if they pinned 1.1.0
+      status: superseded            # by 1.2.0, a minor version: applications pinning it pass as if they pinned 1.2.0
       activated: 2026-10-14
     - version: 1.1.0
-      status: active
+      status: superseded
       activated: 2026-10-22
       proposal: enterprise-architecture/governance/proposals/2026-002-intent-drift-review.md
+    - version: 1.2.0
+      status: active
+      activated: 2026-10-22
+      proposal: enterprise-architecture/governance/proposals/2026-003-every-request-says-why.md
 
   network:
     - version: 1.0.0

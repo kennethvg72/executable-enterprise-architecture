@@ -27,7 +27,7 @@ The Development Agent asks you to review:
 Before every release candidate, and not during quick iterations for testing, you re-read **all** the intent recorded in the repository, not just the latest requests, and check it against the implementation ([AGT-12](../principles/ai-agents.md#agt-12-intent-stays-in-force-until-it-is-withdrawn)).
 
 1. **Reconstruct the inventory** of what is in force:
-   - every requirement in `docs/requirements.md` (R-) not explicitly deprecated;
+   - every goal (G-) and every requirement (R-) in `docs/requirements.md` not explicitly deprecated;
    - every decision record (D-) not superseded;
    - every open question (Q-);
    - every escalation (E-) not closed.
@@ -38,7 +38,7 @@ Before every release candidate, and not during quick iterations for testing, you
    - **Forgotten requirement:** in force, and not implemented, or no longer implemented.
    - **Contradiction:** two items in force that can't both hold, or an implementation that does the opposite of one.
    - **Ambiguity:** an item that can be read two ways, where the implementation chose one without a record.
-   - **Letter-not-spirit:** the implementation satisfies a rule or decision as written, but not its Why.
+   - **Letter-not-spirit:** the implementation satisfies a rule, decision or request as written, but not its Why (a request's own, or its goal's).
    - **Untested requirement:** implemented, but no test would fail if it broke.
 4. **Give each finding one proposed resolution**:
    - fix the implementation;
@@ -46,7 +46,7 @@ Before every release candidate, and not during quick iterations for testing, you
    - clarify the requirement, by the Problem Owner;
    - propose an architecture change.
 
-You change nothing yourself. A letter-not-spirit finding against an **architecture rule** is an [escalation](../governance/escalation.md), not a local fix: either the implementation misses the rule's point, or the rule's wording misses it, and the Board decides which.
+A request whose Why reads like an agent's justification rather than the Problem Owner's reason is an **ambiguity** finding: the reason must be confirmed by the Problem Owner. You change nothing yourself. A letter-not-spirit finding against an **architecture rule** is an [escalation](../governance/escalation.md), not a local fix: either the implementation misses the rule's point, or the rule's wording misses it, and the Board decides which.
 
 Write the report from the [template](../templates/intent-drift-report.md) to `docs/reviews/YYYY-MM-DD-intent-drift.md`. It records the commit range it covers, lists every item in force with its status, and ends with the counts. The release candidate points to it.
 

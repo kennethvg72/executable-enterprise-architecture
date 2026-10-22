@@ -328,10 +328,10 @@ test('Board exceptions are validated before they cover anything, and cover only 
 });
 
 test('a candidate is judged against the versions it pins, or the stage says it can\'t (OWN-04)', () => {
-  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '2.0.0' }).map((r) => r.status), ['pass']);
+  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '3.0.0' }).map((r) => r.status), ['pass']);
   // A deprecated major isn't in this checkout: judge it against its own tag.
-  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '1.0.0' }).map((r) => r.status), ['skip']);
-  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '3.0.0' }).map((r) => r.status), ['skip']);
+  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '2.0.0' }).map((r) => r.status), ['skip']);
+  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '4.0.0' }).map((r) => r.status), ['skip']);
   // An older minor passes as the active one.
   assert.deepEqual(checkPinnedVersions({ 'typescript-web': '1.0.0' }).map((r) => r.status), ['pass']);
   assert.deepEqual(checkPinnedVersions({ 'no-such-architecture': '1.0.0' }).map((r) => r.status), ['skip']);
@@ -443,9 +443,9 @@ test('every anti-pattern breaks a rule that exists, and has a regression sample 
 
 test('an older minor version passes as the active one; a deprecated major warns (OWN-04)', () => {
   const m = clone(loadManifest(APP));
-  m.architecture = { 'enterprise-architecture': '2.0.0', 'typescript-web': '1.0.0', network: '1.0.0', infrastructure: '1.0.0' };
+  m.architecture = { 'enterprise-architecture': '3.0.0', 'typescript-web': '1.0.0', network: '1.0.0', infrastructure: '1.0.0' };
   const own04 = validateManifest(APP, m).filter((r) => r.rule === 'OWN-04');
-  assert.ok(own04.some((r) => r.status === 'pass' && /typescript-web 1\.0\.0 is superseded by 1\.1\.0/.test(r.message)));
+  assert.ok(own04.some((r) => r.status === 'pass' && /typescript-web 1\.0\.0 is superseded by 1\.2\.0/.test(r.message)));
   m.architecture['enterprise-architecture'] = '1.0.0';
   assert.ok(validateManifest(APP, m).some((r) => r.rule === 'OWN-04' && r.status === 'warn' && /2027-06-01/.test(r.message)));
 });
