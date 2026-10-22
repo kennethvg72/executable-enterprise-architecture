@@ -9,8 +9,8 @@ landscape-check: docs/decisions/0000-landscape-check.md   # SIM-09: what already
 technical-owner: null
 
 architecture:
-  enterprise-architecture: 1.0.0
-  typescript-web: 1.0.0
+  enterprise-architecture: 2.0.0
+  typescript-web: 1.1.0
   network: 1.0.0
   infrastructure: 1.0.0
 

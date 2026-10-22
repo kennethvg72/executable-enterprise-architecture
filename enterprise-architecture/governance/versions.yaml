@@ -1,30 +1,47 @@
 # Status of every architecture version. The pipeline reads this file.
-# Statuses: proposed | active | deprecated | decommissioned | withdrawn (see lifecycle.md)
+# Statuses: proposed | active | superseded | deprecated | decommissioned | withdrawn (see lifecycle.md)
 
 architectures:
   enterprise-architecture:
     - version: 1.0.0
-      status: active
+      status: deprecated
       activated: 2026-10-14
+      decommission-date: 2027-06-01    # six months would end in the filing season
     - version: 1.1.0
-      status: proposed
+      status: withdrawn
       proposal: enterprise-architecture/governance/proposals/2026-001-deadline-night-coverage.md
-      activation-planned: 2026-11-01
+      note: Its change was released in 2.0.0.
+    - version: 2.0.0
+      status: active
+      activated: 2026-10-22
+      proposal: enterprise-architecture/governance/proposals/2026-002-intent-drift-review.md
 
   typescript-web:
     - version: 1.0.0
-      status: active
+      status: superseded            # by 1.1.0, a minor version: applications pinning 1.0.0 pass as if they pinned 1.1.0
       activated: 2026-10-14
+    - version: 1.1.0
+      status: active
+      activated: 2026-10-22
+      proposal: enterprise-architecture/governance/proposals/2026-002-intent-drift-review.md
 
   power-apps:
     - version: 1.0.0
-      status: active
+      status: superseded            # by 1.1.0, a minor version: applications pinning 1.0.0 pass as if they pinned 1.1.0
       activated: 2026-10-14
+    - version: 1.1.0
+      status: active
+      activated: 2026-10-22
+      proposal: enterprise-architecture/governance/proposals/2026-002-intent-drift-review.md
 
   android:
     - version: 1.0.0
-      status: active
+      status: superseded            # by 1.1.0, a minor version: applications pinning 1.0.0 pass as if they pinned 1.1.0
       activated: 2026-10-14
+    - version: 1.1.0
+      status: active
+      activated: 2026-10-22
+      proposal: enterprise-architecture/governance/proposals/2026-002-intent-drift-review.md
 
   network:
     - version: 1.0.0

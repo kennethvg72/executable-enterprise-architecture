@@ -1,7 +1,7 @@
 # Proposal 2026-001: Support on deadline night
 
 Architecture: enterprise-architecture
-Proposed version: 1.1.0 (minor: responsibilities move to Central IT; nothing becomes stricter for applications)
+Proposed version: 1.1.0 (minor: responsibilities move to Central IT; nothing becomes stricter for applications). Released in 2.0.0, together with [2026-002](2026-002-intent-drift-review.md); 1.1.0 itself was withdrawn.
 Proposed by: Architecture Board, from escalation 0001 of rejection-triage (in that application's repository)
 Date: 2026-10-14
 

@@ -19,7 +19,8 @@ Each version is a Git tag on this repository, for example `enterprise-architectu
 | Status | Meaning |
 |---|---|
 | **proposed** | Under evaluation. Applications can't pin it yet. |
-| **active** | The current version. New applications pin it. Only the latest version is active. An application pinning an older minor version of the same major passes as if it pinned the active one, because minor versions never make rules stricter. |
+| **active** | The current version. New applications pin it. Only the latest version is active. |
+| **superseded** | An older minor version of the active major. An application pinning it passes as if it pinned the active one, because minor versions never make rules stricter. |
 | **deprecated** | Superseded by a new major version. Applications that pin it still pass the pipeline until its `decommission-date`, but they must migrate before then. |
 | **decommissioned** | No longer accepted by the pipeline. Applications still pinning it can only release a migration to a newer version (which pins that version and is judged against it), or security fixes. |
 | **withdrawn** | A proposal that was not adopted. Kept for the record. |

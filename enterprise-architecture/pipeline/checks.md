@@ -37,6 +37,8 @@ Evaluated at intake for every candidate, whatever the change. Each can restrict 
 | The Problem Owner's "Release" is authentic: a tag signed with their workforce identity, or approval in the pipeline | AGT-06 | Deterministic | 📄 signature verification; simulated here |
 | The candidate's code runs only in a disposable runner, whose isolation the hostile canary has verified since the runner last changed | SEC-13 | Deterministic | ✅ `pipeline.ts` runs candidate code only with `--isolated`; ✅ the canary and `verify-runner.ts`; 📄 the runner itself |
 | Open local findings are listed in the candidate | AGT-02 | Deterministic + review | 📄 parse review files; the Governance Agent compares them by hand here |
+| An intent-drift report exists for the candidate's commit range, nothing has changed the recorded intent since, and its inventory lists every item in force (for applications on enterprise-architecture 2.0.0 or later) | AGT-12 | Deterministic | ✅ `check-intent.ts` |
+| The drift report's findings: no unresolved contradiction or letter-not-spirit; a few in-force items re-checked | AGT-12 | Review | Governance Agent |
 
 ## application
 

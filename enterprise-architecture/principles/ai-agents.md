@@ -61,3 +61,16 @@ At NATAX, AI agents design, build, test and govern solutions. They are effective
 - **An emergency lane.** When the provider is down, a security fix can still ship ([pipeline](../pipeline/README.md#when-the-ai-provider-is-down)).
 **Why.** Microsoft 365 gets a Board-accepted dependency; the component that approves production deserves at least the same. A silently changed model is a silently changed gate.
 **Verified by.** `test`: the pipeline refuses to run with a model that isn't pinned; the regression set runs on every change to models.yaml. `review`: the provider's entry in the landscape.
+
+### AGT-12: Intent stays in force until it is withdrawn
+**Rule.** Intent is recorded in the application's repository, each item with an ID:
+- requirements (R-), in `docs/requirements.md`;
+- decisions (D-, the decision record's number);
+- open questions (Q-);
+- escalations (E-).
+
+A requirement or decision stays in force until a record explicitly deprecates or supersedes it. Silence is not deprecation.
+
+Before every release candidate, the Local Governance Agent reviews the whole recorded intent against the implementation: every item in force, not only the latest requests ([intent-drift review](../agents/local-governance-agent.md#the-intent-drift-review)). Quick iterations for testing don't need it; a release candidate does.
+**Why.** Agents weigh recent requests heavily, and can break earlier intent that was never withdrawn, by building exactly what was asked this week. The deterministic checks can't see that: intent isn't a rule. Recorded intent and a reviewer tasked with re-reading all of it can. Drift then becomes a decision, an explicit deprecation, instead of an accident.
+**Verified by.** `review`: the drift report, read by the Governance Agent, who re-checks a few in-force items itself. `test`: the pipeline refuses a release candidate without a drift report for its commit range, with a report older than the latest change to the recorded intent, or with a report whose inventory misses an item in force.

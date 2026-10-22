@@ -24,6 +24,7 @@ import { parseArgs } from 'node:util';
 import { verifyInfrastructure } from '../../infrastructure/tools/verify.ts';
 import { verifyNetwork } from '../../network/tools/verify.ts';
 import { checkDependencies } from './check-dependencies.ts';
+import { checkIntent } from './check-intent.ts';
 import { checkLinks } from './check-links.ts';
 import { REPO_ROOT, intentChanges, loadManifest, loadModel, loadPlatform, readYaml, withApplications } from './lib/load.ts';
 import { applyExceptions, exceptionsFor } from './lib/exceptions.ts';
@@ -112,6 +113,7 @@ export function runPipeline(appDir: string, options: { candidateDir?: string | u
   intake.push(...judgeGateChanges([{ commit: 'HEAD', files: GATE_INPUTS.filter((g) => !g.includes('*')), signers: [] }], undefined, options.today ?? new Date()));
   intake.push(...checkPinnedVersions(manifest.architecture ?? {}));
   sections.push(['Intake and manifest', intake]);
+  sections.push(['Intent (AGT-12)', checkIntent(appDir, { candidateDir: options.candidateDir })]);
 
   sections.push(['Secrets (SEC-03)', scanSecrets(appDir)]);
   sections.push(['Dependencies (SIM-01, SIM-05, SEC-05)', checkDependencies(appDir)]);

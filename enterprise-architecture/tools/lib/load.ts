@@ -22,7 +22,7 @@ export function loadManifest(appDir: string): Manifest {
 
 export interface VersionEntry {
   version: string;
-  status: 'proposed' | 'active' | 'deprecated' | 'decommissioned' | 'withdrawn';
+  status: 'proposed' | 'active' | 'superseded' | 'deprecated' | 'decommissioned' | 'withdrawn';
   'decommission-date'?: string;
 }
 

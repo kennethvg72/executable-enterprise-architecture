@@ -34,6 +34,7 @@ evidence:
     result: releases/rc-20261020-1/test-results.txt
   test-review: docs/reviews/2026-10-19-first-release-test.md
   governance-review: docs/reviews/2026-10-19-first-release-governance.md
+  intent-drift: docs/reviews/2026-10-19-intent-drift.md   # the whole recorded intent, re-read (AGT-12)
   models:                        # which model produced what (AGT-03); record exact model ids
     development: claude
     test: codex

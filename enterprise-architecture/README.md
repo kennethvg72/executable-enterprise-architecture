@@ -18,7 +18,7 @@ Version: see [VERSION](VERSION). Status of every version: [governance/versions.y
 | [pipeline/](pipeline/README.md) | The central release pipeline: the only way to change production. |
 | [governance/](governance/README.md) | How this architecture changes: the Architecture Board, versions, escalations, exceptions. |
 | [landscape/](landscape/README.md) | NATAX itself: [every application](landscape/landscape.md) (read before building anything), sites, network, accumulated complexity. |
-| [templates/](templates/) | Files that applications copy: the architecture manifest, decision records, escalations. |
+| [templates/](templates/) | Files that applications copy: the architecture manifest, decision records, escalations, and the intent-drift report ([AGT-12](principles/ai-agents.md#agt-12-intent-stays-in-force-until-it-is-withdrawn)). |
 | [tools/](tools/) | Deterministic checks the pipeline runs against these rules. |
 
 ## Principles

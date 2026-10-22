@@ -47,7 +47,7 @@ An application that belongs to everyone belongs to no one. At NATAX, every appli
 | B | Central IT, 24×7 | Problem Owner (or delegate) during business hours, with the Development Agent available to diagnose. Technical Owner if there is one. |
 | C | Central IT, business hours | Problem Owner, best effort |
 
-During the filing season (see [delivery](delivery.md)), class B applications that support filing are covered on extended hours: 07:00–23:00 headquarters time, seven days a week.
+During the filing season (see [delivery](delivery.md)), class B applications that support filing are covered on extended hours: 07:00–23:00 headquarters time, seven days a week, and 07:00–03:00 on the last three days before the deadline. Outside business hours, Central IT's on-call engineer responds, using the pipeline's rollback as the first remedy and the Development Agent to diagnose.
 **Why.** A citizen developer can own an application without being paged at 3 a.m. The platform beneath it, which is shared, is always covered by professionals.
 **Verified by.** `review`.
 

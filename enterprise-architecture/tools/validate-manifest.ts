@@ -128,6 +128,12 @@ export function validateManifest(appDir: string, manifest: Manifest, options: Op
       results.push(fail('OWN-04', `${name} ${version} does not exist.`, `Pin an active version from governance/versions.yaml.`));
     } else if (entry.status === 'active') {
       results.push(pass('OWN-04', `${name} ${version} is active.`));
+    } else if (entry.status === 'superseded') {
+      // An older minor of the active major: it passes as if it pinned the active one (lifecycle.md).
+      const active = versions[name]?.find((v) => v.status === 'active' && v.version.split('.')[0] === String(version).split('.')[0]);
+      results.push(active
+        ? pass('OWN-04', `${name} ${version} is superseded by ${active.version}, a minor version: judged as ${active.version}.`)
+        : fail('OWN-04', `${name} ${version} is superseded, but no active version of its major exists.`, 'Pin an active version from governance/versions.yaml.'));
     } else if (entry.status === 'deprecated') {
       results.push(warn('OWN-04', `${name} ${version} is deprecated${entry['decommission-date'] ? ` and decommissioned on ${entry['decommission-date']}` : ''}.`, 'Plan the migration to the active version.'));
     } else {
