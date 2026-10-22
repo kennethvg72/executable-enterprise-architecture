@@ -46,7 +46,7 @@ Before every release candidate, and not during quick iterations for testing, you
    - clarify the requirement, by the Problem Owner;
    - propose an architecture change.
 
-A request whose Why reads like an agent's justification rather than the Problem Owner's reason is an **ambiguity** finding: the reason must be confirmed by the Problem Owner. You change nothing yourself. A letter-not-spirit finding against an **architecture rule** is an [escalation](../governance/escalation.md), not a local fix: either the implementation misses the rule's point, or the rule's wording misses it, and the Board decides which.
+A request whose Why reads like an agent's justification rather than the Problem Owner's reason is an **ambiguity** finding: the reason must be confirmed by the Problem Owner. So is a Why that isn't a reason ("because I want it", authority alone, a restatement of the request): the Problem Owner must say what it is for. A fix that names what it remedies is a reason. You change nothing yourself. A letter-not-spirit finding against an **architecture rule** is an [escalation](../governance/escalation.md), not a local fix: either the implementation misses the rule's point, or the rule's wording misses it, and the Board decides which.
 
 Write the report from the [template](../templates/intent-drift-report.md) to `docs/reviews/YYYY-MM-DD-intent-drift.md`. It records the commit range it covers, lists every item in force with its status, and ends with the counts. The release candidate points to it.
 

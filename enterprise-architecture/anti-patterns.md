@@ -95,3 +95,9 @@ Each entry has four parts: what it **looks like** in a diff, **why it hurts**, t
 **Why it hurts.** When one datacenter's instances are dead, the other datacenter answers for it, so the site is never withdrawn, and its users get slow or failing requests instead of being sent elsewhere.
 **Breaks.** [RES-02](principles/resilience.md#res-02-dc1-and-dc2-are-both-production-all-the-time), [RES-06](principles/resilience.md#res-06-healthy-means-ready-to-serve).
 **Instead.** Judge each datacenter by its own instances, directly, and withdraw it when none of them is ready.
+
+### AP-15: The reason that isn't one
+**Looks like.** A request whose Why is "because I want it", "the director asked for it", "needed", "everyone does it", or the request again in other words.
+**Why it hurts.** Nobody can use it to choose between two ways of building the request, to resolve a conflict with another request, or to tell later whether it still holds. The drift review can only check the letter.
+**Breaks.** [AGT-12](principles/ai-agents.md#agt-12-intent-stays-in-force-until-it-is-withdrawn).
+**Instead.** Ask what it is for: who benefits, what problem it solves, what goes wrong without it. If the Problem Owner doesn't know yet, record their words and an open question. A fix that names what it remedies ("to remedy the bug introduced by version 2.3.1") is a reason.

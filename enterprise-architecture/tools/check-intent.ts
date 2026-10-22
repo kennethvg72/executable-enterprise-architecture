@@ -34,14 +34,34 @@ function tableAfter(text: string, heading: string): string[][] {
 }
 
 /**
+ * A hint, not a judgment: is this Why obviously not a reason (AGT-12)? Judging reasons is the
+ * Governance Agent's work; this only catches the phrases and restatements that never are one. A fix
+ * that names what it remedies ("to remedy the bug introduced by version 2.3.1") is a reason.
+ */
+export function notAReason(entry: string, why: string): string | undefined {
+  const w = why.trim().toLowerCase().replace(/[.!]+$/, '');
+  if (/^(?:to )?(?:remedy|fix|restore|repair|revert|undo)\b.*\b(?:bug|regression|incident|finding|version|release|r-\d+)\b/.test(w)) return undefined;
+  if (/^(?:because )?(?:i|we|they) (?:want|need|like|prefer)(?: it| this| that)?$/.test(w)) return 'preference alone';
+  if (/^(?:requested|asked|wanted|demanded) by\b|^(?:the )?\w+ (?:asked|wants|requested)(?: (?:for )?(?:it|this))?$/.test(w)) return 'authority without its own reason';
+  if (/^(?:needed|required|necessary|obviously|nice to have|everyone does it|it'?s nicer|best practice)$/.test(w)) return 'not saying what it is for';
+  const words = (t: string) => new Set(t.toLowerCase().match(/[a-z]{4,}/g) ?? []);
+  const said = words(entry);
+  const given = [...words(why)].filter((x) => !['because', 'that', 'this', 'with', 'should', 'have', 'will', 'want'].includes(x));
+  if (given.length && given.every((x) => said.has(x))) return 'only repeats the request';
+  return undefined;
+}
+
+/**
  * Every item of recorded intent that is in force: an item stays in force until a record withdraws
  * it. Also every goal or request in force without a reason: neither its own Why (the Problem
  * Owner's) nor a goal that exists and has one. "not given" is a recorded absence, still without one.
+ * And those whose Why is obviously not a reason (notAReason): a hint for the Governance Agent.
  */
-export function intentInForce(appDir: string): { inForce: string[]; problems: string[]; withoutWhy: string[] } {
+export function intentInForce(appDir: string): { inForce: string[]; problems: string[]; withoutWhy: string[]; doubtful: string[] } {
   const problems: string[] = [];
   const inForce: string[] = [];
   const withoutWhy: string[] = [];
+  const doubtful: string[] = [];
   const reqFile = join(appDir, 'docs', 'requirements.md');
   if (existsSync(reqFile)) {
     const text = readFileSync(reqFile, 'utf8');
@@ -64,6 +84,7 @@ export function intentInForce(appDir: string): { inForce: string[]; problems: st
     for (const [id, why] of liveGoals) {
       inForce.push(id);
       if (!has(why)) withoutWhy.push(`${id} (a goal without its own reason)`);
+      else { const doubt = notAReason(goals.find((g) => g[0] === id)![1] ?? '', why!); if (doubt) doubtful.push(`${id} ("${why}": ${doubt})`); }
     }
     for (const r of rows.filter((x) => !withdrawn.has(x[0]!))) {
       inForce.push(r[0]!);
@@ -73,6 +94,9 @@ export function intentInForce(appDir: string): { inForce: string[]; problems: st
       const cited = why!.match(/\bG-\d+\b/g) ?? [];
       const onlyGoals = why!.replace(/\bG-\d+\b|[,;\s]|\band\b/gi, '') === '';
       if (onlyGoals && cited.some((g) => !liveGoals.has(g) || !has(liveGoals.get(g)))) withoutWhy.push(`${r[0]} (cites ${cited.join(', ')}, which isn't a goal in force with a reason)`);
+      // The reason of a withdrawal is judged too, against the entry without its "Deprecates R-n:" prefix.
+      const doubt = onlyGoals ? undefined : notAReason((r[2] ?? '').replace(/^(?:Deprecates|Supersedes) [^:]*:\s*/, ''), why!);
+      if (doubt) doubtful.push(`${r[0]} ("${why}": ${doubt})`);
     }
     for (const q of tableAfter(text, 'Open questions').filter((r) => /^Q-\d+$/.test(r[0] ?? ''))) {
       if (!(q[3] ?? '').trim()) inForce.push(q[0]!);
@@ -88,7 +112,7 @@ export function intentInForce(appDir: string): { inForce: string[]; problems: st
   };
   records('decisions', 'D', /^superseded by\b/i);
   records('escalations', 'E', /^(answered|closed)\b/i);
-  return { inForce, problems, withoutWhy };
+  return { inForce, problems, withoutWhy, doubtful };
 }
 
 /** The drift report for a candidate: named in its evidence, or the latest in docs/reviews/. */
@@ -107,13 +131,17 @@ export function checkIntent(appDir: string, options: { candidateDir?: string | u
   if (major < 2) return [pass('AGT-12', `Pins enterprise-architecture ${pinned}: the intent-drift review applies from 2.0.0.`)];
 
   const results: Result[] = [];
-  const { inForce, problems, withoutWhy } = intentInForce(appDir);
+  const { inForce, problems, withoutWhy, doubtful } = intentInForce(appDir);
   for (const p of problems) results.push(fail('AGT-12', `The recorded intent is inconsistent: ${p}.`, 'Requirements are append-only: fix it with a new entry, never by editing an old one.'));
   // From 3.0.0: every request in force says why. A warning while working; a failure for a release candidate.
   if (major >= 3 && withoutWhy.length) {
     const message = `${withoutWhy.length} item(s) in force without a reason: ${withoutWhy.join(', ')}. The reason is the Problem Owner's, never an agent's.`;
     const fix = 'Ask the Problem Owner why, or which goal it serves, and record their answer; until then, "not given" with an open question.';
     results.push(options.candidateDir ? fail('AGT-12', message, fix) : warn('AGT-12', `${message} A release candidate will be refused until each has one.`, fix));
+  }
+  // A hint for the Governance Agent, never a failure: whether a reason is good takes judgment.
+  if (major >= 3 && doubtful.length) {
+    results.push(warn('AGT-12', `${doubtful.length} reason(s) that may not be reasons: ${doubtful.join('; ')}. A reason says what a request is for, or what it remedies; the Governance Agent judges them at release.`, 'Ask the Problem Owner what it is for, and record their answer.'));
   }
   const file = findDriftReport(appDir, options.candidateDir);
   if (!file) return [...results, fail('AGT-12', 'No intent-drift report for this candidate.', 'The Local Governance Agent re-reads the whole recorded intent against the implementation and writes the report (templates/intent-drift-report.md).')];

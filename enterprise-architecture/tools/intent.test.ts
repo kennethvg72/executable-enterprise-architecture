@@ -9,7 +9,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { stringify } from 'yaml';
-import { checkIntent, intentInForce } from './check-intent.ts';
+import { checkIntent, intentInForce, notAReason } from './check-intent.ts';
 import { REPO_ROOT, clone, loadManifest } from './lib/load.ts';
 
 const FIXTURE = join(REPO_ROOT, 'enterprise-architecture', 'tools', 'fixtures', 'registered-app');
@@ -178,4 +178,39 @@ test('from 3.0.0, every request in force says why: its own, or a goal\'s (AGT-12
   const old = app('2.0.0');
   writeFileSync(join(old.dir, 'docs', 'requirements.md'), text);
   assert.ok(!checkIntent(old.dir).some((r) => /without a reason/.test(r.message)));
+});
+
+test('a reason says what it is for, or what it remedies; obvious non-reasons are hinted, never failed (AGT-12, AP-15)', () => {
+  const entry = 'Export the rejection queue to a spreadsheet.';
+  // Not reasons.
+  assert.equal(notAReason(entry, 'Because I want it.'), 'preference alone');
+  assert.equal(notAReason(entry, 'Requested by the director'), 'authority without its own reason');
+  assert.equal(notAReason(entry, 'The director asked for it'), 'authority without its own reason');
+  assert.equal(notAReason(entry, 'Needed'), 'not saying what it is for');
+  assert.equal(notAReason(entry, 'To export the queue to a spreadsheet'), 'only repeats the request');
+  // Reasons, including the fix that names what it remedies.
+  assert.equal(notAReason(entry, 'Leads report weekly rejection counts to Finance, and copy them by hand today.'), undefined);
+  assert.equal(notAReason('Claims are released again after 24 hours.', 'To remedy the bug introduced by version 2.3.1'), undefined);
+  assert.equal(notAReason('Restore the banner.', 'Fix the regression from release 2026-10-14 (R-004)'), undefined);
+
+  // In the pipeline: a warning, at release too. Judging reasons is the Governance Agent's work.
+  const a = app('3.0.0');
+  writeFileSync(join(a.dir, 'docs', 'requirements.md'), `# Requirements
+
+## Requirements log
+
+| ID | Date | Entry | Why | Tests |
+|---|---|---|---|---|
+| R-001 | 2026-10-22 | ${entry} | Because I want it. | |
+| R-002 | 2026-10-22 | Claims are released again after 24 hours. | To remedy the bug introduced by version 2.3.1 | |
+`);
+  a.git('add', '-A'); a.git('commit', '-qm', 'intent');
+  writeFileSync(join(a.dir, 'docs', 'reviews', '2026-10-22-intent-drift.md'), report(`${a.first}..${a.git('rev-parse', 'HEAD')}`, ['R-001', 'R-002', 'D-0001']));
+  a.git('add', '-A'); a.git('commit', '-qm', 'drift review');
+  mkdirSync(join(a.dir, 'releases', 'rc-1'), { recursive: true });
+  writeFileSync(join(a.dir, 'releases', 'rc-1', 'candidate.yaml'), stringify({ commit: a.git('rev-parse', 'HEAD'), evidence: { 'intent-drift': 'docs/reviews/2026-10-22-intent-drift.md' } }));
+  const hints = checkIntent(a.dir, { candidateDir: join(a.dir, 'releases', 'rc-1') }).filter((r) => /may not be reasons/.test(r.message));
+  assert.deepEqual(hints.map((r) => r.status), ['warn']);
+  assert.match(hints[0]!.message, /R-001/);
+  assert.doesNotMatch(hints[0]!.message, /R-002/);
 });

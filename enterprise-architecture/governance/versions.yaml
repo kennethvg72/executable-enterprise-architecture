@@ -17,9 +17,13 @@ architectures:
       decommission-date: 2027-06-01
       proposal: enterprise-architecture/governance/proposals/2026-002-intent-drift-review.md
     - version: 3.0.0
-      status: active
+      status: superseded            # by 3.1.0, a minor version: applications pinning it pass as if they pinned 3.1.0
       activated: 2026-10-22
       proposal: enterprise-architecture/governance/proposals/2026-003-every-request-says-why.md
+    - version: 3.1.0
+      status: active
+      activated: 2026-10-22
+      proposal: enterprise-architecture/governance/proposals/2026-004-a-reason-says-what-it-is-for.md
 
   typescript-web:
     - version: 1.0.0

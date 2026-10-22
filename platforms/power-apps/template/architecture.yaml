@@ -9,7 +9,7 @@ technical-owner: null
 landscape-check: docs/decisions/0000-landscape-check.md   # SIM-09: what already exists, and who was asked
 
 architecture:
-  enterprise-architecture: 3.0.0
+  enterprise-architecture: 3.1.0
   power-apps: 1.2.0
   network: 1.0.0
   infrastructure: 1.0.0

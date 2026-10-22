@@ -328,7 +328,8 @@ test('Board exceptions are validated before they cover anything, and cover only 
 });
 
 test('a candidate is judged against the versions it pins, or the stage says it can\'t (OWN-04)', () => {
-  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '3.0.0' }).map((r) => r.status), ['pass']);
+  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '3.1.0' }).map((r) => r.status), ['pass']);
+  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '3.0.0' }).map((r) => r.status), ['pass'], 'an older minor passes');
   // A deprecated major isn't in this checkout: judge it against its own tag.
   assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '2.0.0' }).map((r) => r.status), ['skip']);
   assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '4.0.0' }).map((r) => r.status), ['skip']);
@@ -439,11 +440,17 @@ test('every anti-pattern breaks a rule that exists, and has a regression sample 
   // And no sample without an anti-pattern: the set and the catalog stay one thing.
   const ids = new Set(entries.map((e) => e.id));
   for (const f of readdirSync(regression).filter((f) => /^AP-.*\.md$/.test(f))) assert.ok(ids.has(f.replace(/\.md$/, '')), `${f} has no anti-pattern`);
+  // Approved counterparts (OK-): a model that rejects too much is wrong too. Each belongs to an anti-pattern.
+  for (const f of readdirSync(regression).filter((f) => /^OK-.*\.md$/.test(f))) {
+    const text = readFileSync(join(regression, f), 'utf8');
+    assert.match(text, /^Expected verdict: approved$/m, `${f} isn't an approved sample`);
+    assert.ok(ids.has(/^Counterpart of: (\S+)$/m.exec(text)?.[1] ?? ''), `${f} isn't the counterpart of an anti-pattern`);
+  }
 });
 
 test('an older minor version passes as the active one; a deprecated major warns (OWN-04)', () => {
   const m = clone(loadManifest(APP));
-  m.architecture = { 'enterprise-architecture': '3.0.0', 'typescript-web': '1.0.0', network: '1.0.0', infrastructure: '1.0.0' };
+  m.architecture = { 'enterprise-architecture': '3.1.0', 'typescript-web': '1.0.0', network: '1.0.0', infrastructure: '1.0.0' };
   const own04 = validateManifest(APP, m).filter((r) => r.rule === 'OWN-04');
   assert.ok(own04.some((r) => r.status === 'pass' && /typescript-web 1\.0\.0 is superseded by 1\.2\.0/.test(r.message)));
   m.architecture['enterprise-architecture'] = '1.0.0';
