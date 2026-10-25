@@ -87,9 +87,15 @@ The lane is for when the provider is down, not when its answer is inconvenient.
 
 ## Running the pipeline here
 
-To run the pipeline against an application in this repository, start a **separate** agent session, preferably on a different model family from the one that built the application ([AGT-03](../principles/ai-agents.md#agt-03-use-different-models-for-independence)), and give it this instruction:
+The Governance Agent runs once per release candidate, as a command, never as a conversation: whoever wants the release never talks to the judge ([AGT-01](../principles/ai-agents.md#agt-01-separate-agents-for-separate-duties)). Pin a model from a different family than the one that built the application ([AGT-03](../principles/ai-agents.md#agt-03-use-different-models-for-independence)), after it has passed the regression set ([AGT-11](../principles/ai-agents.md#agt-11-the-ai-providers-are-governed-like-any-other-dependency)):
 
-> Act as the Governance Agent defined in `enterprise-architecture/agents/governance-agent.md`. Follow `enterprise-architecture/pipeline/README.md` for the release candidate at `<application repository>/releases/<id>/`. Write your verdict next to the candidate.
+```sh
+node enterprise-architecture/tools/regression.ts <provider> <model>      # writes pipeline/regression/results/...
+# then pin provider, model and that result in pipeline/models.yaml: a release of the pipeline
+node enterprise-architecture/tools/govern.ts <application repository> <candidate id> [--isolated]
+```
+
+`regression.ts` shows the model each sample without its answer, next to a copy of the architecture that leaves the regression set out. `govern.ts` refuses a model that isn't pinned with a passing result, clones the candidate at its commit, runs the deterministic stage, and asks the model, sandboxed read-only, for the verdict. A model can't approve what the deterministic stage didn't pass. The record goes to the verdict store (`VERDICT_STORE`, or `~/verdict-store`) once, with the transcript and the deterministic output, and is never overwritten; the team gets a copy next to the candidate. Exit 0 approved, 1 rejected, 3 no verdict.
 
 The deterministic stage is one command:
 

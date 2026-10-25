@@ -3,8 +3,9 @@
 # first. Exact versions only: a model that changes underneath the pipeline changes the gate.
 
 governance-agent:
-  provider: <the Board-accepted provider>
+  provider: <the Board-accepted provider, e.g. openai-codex, the one tools/lib/models.ts can ask>
   model: <exact model version>
+  regression: <path of the passing result for exactly this provider and model, from tools/regression.ts>
 security-agent:
   provider: <a different provider from the Governance Agent's (AGT-03)>
   model: <exact model version>
