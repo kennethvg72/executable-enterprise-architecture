@@ -90,6 +90,12 @@ test('the regression set never shows a sample\'s answer, and judges verdicts and
   assert.match(judge(s, 'Verdict: rejected\nRules: SIM-01\n').problem ?? '', /didn't cite AGT-12/);
   assert.equal(judge(s, 'Verdict: approved\nRules:\n').passed, false);
   assert.equal(judge(readSample(join(REGRESSION, 'OK-01.md')), 'Verdict: approved\nRules:\n').passed, true);
+  // Alternatives: a wildcard way out breaks either rule, and citing one of them is a correct ground.
+  const either = readSample(join(REGRESSION, 'AP-10.md'));
+  assert.deepEqual(either.rules, ['SEC-02 | ZTN-03']);
+  assert.equal(judge(either, 'Verdict: rejected\nRules: SEC-02\n').passed, true);
+  assert.equal(judge(either, 'Verdict: rejected\nRules: ZTN-03\n').passed, true);
+  assert.equal(judge(either, 'Verdict: rejected\nRules: INT-05\n').passed, false);
 
   const seen: string[] = [];
   const ask: Ask = async (p) => {

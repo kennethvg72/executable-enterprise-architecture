@@ -434,7 +434,7 @@ test('every anti-pattern breaks a rule that exists, and has a regression sample 
     assert.ok(existsSync(sample), `${e.id} has no regression sample`);
     const text = readFileSync(sample, 'utf8');
     assert.match(text, /^Expected verdict: rejected$/m, `${e.id}'s sample has no expected verdict`);
-    const expected = (/^Expected rules: (.+)$/m.exec(text)?.[1] ?? '').split(/,\s*/).filter(Boolean);
+    const expected = (/^Expected rules: (.+)$/m.exec(text)?.[1] ?? '').split(/[,|]/).map((r) => r.trim()).filter(Boolean);
     assert.ok(expected.length && expected.every((r) => cited.includes(r)), `${e.id}'s sample expects ${expected.join(', ')}, not rules the anti-pattern cites`);
   }
   // And no sample without an anti-pattern: the set and the catalog stay one thing.

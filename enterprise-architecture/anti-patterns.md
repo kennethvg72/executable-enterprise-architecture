@@ -69,7 +69,7 @@ Each entry has four parts: what it **looks like** in a diff, **why it hurts**, t
 ### AP-10: The wildcard way out
 **Looks like.** An egress destination with a wildcard (`*.somecloud.net`), any port, or "the internet" for a service that calls one API.
 **Why it hurts.** Anything under the wildcard is reachable, including a namespace an attacker registers. It is an exfiltration channel with an approval stamp.
-**Breaks.** [INT-05](principles/integration.md#int-05-shared-capabilities-are-used-not-rebuilt), [SEC-02](principles/security.md#sec-02-nothing-is-trusted-because-of-where-it-is).
+**Breaks.** [ZTN-03](../network/standards.md#ztn-03-default-deny-inbound-and-outbound-on-every-host), [SEC-02](principles/security.md#sec-02-nothing-is-trusted-because-of-where-it-is).
 **Instead.** The exact destinations, through the egress proxy. Where a provider truly requires a wildcard, a recorded reason and a narrower design first.
 
 ### AP-11: The copy that becomes the source

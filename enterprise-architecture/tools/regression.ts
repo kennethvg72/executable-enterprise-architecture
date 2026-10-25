@@ -4,7 +4,7 @@
 //
 // The model sees each sample without its answer: only its application and its candidate, next to
 // a copy of the architecture that leaves the regression set out. It must reach the expected
-// verdict and, for a rejection, cite every expected rule. The result names the provider and the
+// verdict and, for a rejection, cite every expected rule (or one of its alternatives). The result names the provider and the
 // model exactly; models.yaml points to it when the model is pinned, and govern.ts checks that.
 //
 // Exit 0 when every sample passed, 1 when one didn't, 3 when one got no verdict at all.
@@ -27,7 +27,7 @@ export function readSample(file: string): Sample {
   const verdict = line('Expected verdict');
   const candidate = /^## The candidate\s*$([\s\S]*?)(?=^## |(?![\s\S]))/m.exec(text)?.[1]?.trim() ?? '';
   if ((verdict !== 'approved' && verdict !== 'rejected') || !candidate) throw new Error(`${basename(file)} has no expected verdict or no candidate section.`);
-  return { id: basename(file, '.md'), application: line('Application'), verdict, rules: line('Expected rules').split(/[,\s]+/).filter(Boolean), candidate };
+  return { id: basename(file, '.md'), application: line('Application'), verdict, rules: line('Expected rules').split(',').map((r) => r.trim()).filter(Boolean), candidate };
 }
 
 export interface Judged { sample: Sample; verdict?: 'approved' | 'rejected'; cited: string[]; passed: boolean; problem?: string }
@@ -38,7 +38,8 @@ export function judge(sample: Sample, answer: string): Judged {
   const rulesLine = /^\W*Rules:(.*)$/im.exec(answer)?.[1] ?? '';
   const cited = [...rulesLine.matchAll(/\b[A-Z]{2,4}(?:-[A-Z]{2,3})?-\d{2}\b/g)].map((m) => m[0]);
   if (!verdict) return { sample, cited, passed: false, problem: 'no verdict' };
-  const missing = sample.verdict === 'rejected' ? sample.rules.filter((r) => !cited.includes(r)) : [];
+  // Each expected rule must be cited; "SEC-02 | ZTN-03" means either one is a correct ground.
+  const missing = sample.verdict === 'rejected' ? sample.rules.filter((r) => !r.split('|').some((alt) => cited.includes(alt.trim()))) : [];
   return { sample, verdict, cited, passed: verdict === sample.verdict && missing.length === 0, ...(missing.length ? { problem: `didn't cite ${missing.join(', ')}` } : {}) };
 }
 
