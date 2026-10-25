@@ -70,7 +70,10 @@ function codex(model: string): Ask {
   return async (prompt, cwd) => {
     const exe = codexExecutable();
     const out = join(mkdtempSync(join(tmpdir(), 'answer-')), 'answer.md');
-    const r = await run(exe, ['exec', '--skip-git-repo-check', '--ephemeral', '--ignore-user-config', '--ignore-rules',
+    // On Windows, the sandbox has to be named: without the user's configuration, the default one
+    // blocks the commands the model reads files with, and a model that can't read rejects blind.
+    const windows = process.platform === 'win32' ? ['-c', 'windows.sandbox="elevated"'] : [];
+    const r = await run(exe, ['exec', '--skip-git-repo-check', '--ephemeral', '--ignore-user-config', '--ignore-rules', ...windows,
       '-s', 'read-only', '-m', model, '-C', cwd, '--json', '-o', out, '-'], prompt, 30 * 60 * 1000);
     const tool = spawnSync(exe, ['--version'], { encoding: 'utf8' }).stdout?.trim() || 'codex';
     if (r.code !== 0 || !existsSync(out)) throw new Error(`${tool} failed (exit ${r.code}): ${r.stderr.trim().split('\n').slice(-3).join(' ')}`);
