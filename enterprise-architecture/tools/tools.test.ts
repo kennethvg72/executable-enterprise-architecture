@@ -359,9 +359,9 @@ test('only an approved, unchanged architecture can judge a candidate (AGT-04)', 
   const git = (...args: string[]) => spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
   git('init', '-q'); git('config', 'user.email', 'test@natax.example'); git('config', 'user.name', 'Test');
   mkdirSync(join(dir, 'network'));
-  writeFileSync(join(dir, 'network', 'VERSION'), '1.0.0\n');
+  writeFileSync(join(dir, 'network', 'VERSION'), '1.4.0\n');   // not this checkout's: the version at root counts
   writeFileSync(join(dir, 'network', 'standards.md'), '### ZTN-01: Rule\n');
-  git('add', '-A'); git('commit', '-qm', 'v1'); git('tag', 'network/v1.0.0');
+  git('add', '-A'); git('commit', '-qm', 'v1'); git('tag', 'network/v1.4.0');
   const status = () => checkApprovedArchitecture(['network'], dir).map((r) => r.status);
   assert.deepEqual(status(), ['pass']);
   // Edited and not committed: what the Board approved isn't what would judge.
@@ -370,7 +370,7 @@ test('only an approved, unchanged architecture can judge a candidate (AGT-04)', 
   // Committed, but not as a new approved version.
   git('commit', '-qam', 'weaker'); assert.deepEqual(status(), ['skip']);
   // A planted file nothing tracks.
-  git('reset', '-q', '--hard', 'network/v1.0.0');
+  git('reset', '-q', '--hard', 'network/v1.4.0');
   writeFileSync(join(dir, 'network', 'extra-rules.md'), '### ZTN-99: Planted\n');
   assert.deepEqual(status(), ['skip']);
 });

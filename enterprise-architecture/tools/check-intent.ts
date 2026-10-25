@@ -168,7 +168,7 @@ export function checkIntent(appDir: string, options: { candidateDir?: string | u
   }
 
   // Complete: every item in force is in the inventory.
-  const inventory = new Set(tableAfter(text, 'Inventory').map((r) => r[0]!).filter((id) => /^[RDQE]-\d+$/.test(id)));
+  const inventory = new Set(tableAfter(text, 'Inventory').map((r) => r[0]!).filter((id) => /^(?:G|R|D|Q|E)-\d+$/.test(id)));
   const missing = inForce.filter((id) => !inventory.has(id));
   results.push(missing.length
     ? fail('AGT-12', `The drift report's inventory misses ${missing.length} item(s) in force: ${missing.join(', ')}. An item stays in force until a record withdraws it.`, 'Review those items too, or withdraw them explicitly, by the Problem Owner.')

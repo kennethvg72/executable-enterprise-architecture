@@ -91,6 +91,30 @@ test('a report older than the latest change to the requirements is refused', () 
   assert.ok(results.some((r) => /stale/.test(r.message)));
 });
 
+test('goals in force belong in the inventory too', () => {
+  const a = app('3.1.1');
+  writeFileSync(join(a.dir, 'docs', 'requirements.md'), `# Requirements
+
+## Goals
+
+| ID | Goal | Why |
+|---|---|---|
+| G-1 | Customers hear about a rejection within a day | A late correction can cost them the filing deadline. |
+
+## Requirements log
+
+| ID | Date | Entry | Why | Tests |
+|---|---|---|---|---|
+| R-001 | 2026-10-01 | Agents see rejections grouped by error code. | G-1 | |
+`);
+  const coverage = (ids: string[]) => {
+    writeFileSync(join(a.dir, 'docs', 'reviews', '2026-10-25-intent-drift.md'), report(`${a.first}..${a.first}`, ids));
+    return checkIntent(a.dir).filter((r) => r.message.includes('inventory'));
+  };
+  assert.deepEqual(coverage(['G-1', 'R-001', 'D-0001']).map((r) => r.status), ['pass']);
+  assert.ok(coverage(['R-001', 'D-0001']).some((r) => r.status === 'fail' && r.message.includes('in force: G-1')));
+});
+
 test('a report whose inventory misses an item in force is refused', () => {
   const a = app();
   writeFileSync(join(a.dir, 'docs', 'reviews', '2026-10-22-intent-drift.md'), report(`${a.first}..${a.first}`, ['R-001', 'Q-001', 'D-0001']));

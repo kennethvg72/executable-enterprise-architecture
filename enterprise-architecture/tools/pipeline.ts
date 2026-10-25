@@ -230,7 +230,7 @@ export function checkApprovedArchitecture(names: string[], root = REPO_ROOT): Re
   if (head.status !== 0) return [skip('AGT-04', 'The architecture is not a Git checkout, so no approved version can be shown. Judge it against a checkout of the version tags.')];
   return names.map((name) => {
     const { dir, data } = pathsOf(name);
-    const version = checkoutVersion(name);
+    const version = checkoutVersion(name, root);
     const tag = `${name}/v${version}`;
     if (!version || git('rev-parse', '-q', '--verify', `refs/tags/${tag}`).status !== 0) return skip('AGT-04', `${name} ${version ?? '?'} has no tag ${tag}: it isn't an approved version.`);
     const scope = ['--', dir, ...data.map((d) => `:(exclude)${d}`)];
@@ -245,9 +245,9 @@ export function checkApprovedArchitecture(names: string[], root = REPO_ROOT): Re
 }
 
 /** The version of each architecture in this checkout, from its VERSION file. */
-function checkoutVersion(name: string): string | undefined {
+function checkoutVersion(name: string, root = REPO_ROOT): string | undefined {
   const dir = ['enterprise-architecture', 'network', 'infrastructure'].includes(name) ? name : join('platforms', name);
-  const file = join(REPO_ROOT, dir, 'VERSION');
+  const file = join(root, dir, 'VERSION');
   return existsSync(file) ? readFileSync(file, 'utf8').trim() : undefined;
 }
 
