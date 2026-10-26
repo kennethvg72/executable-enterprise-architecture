@@ -2,7 +2,6 @@
 
 Application: field-visits (Android)
 Expected verdict: rejected
-Expected rules: AND-04
 
 ## The candidate
 

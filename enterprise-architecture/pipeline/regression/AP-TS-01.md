@@ -2,7 +2,6 @@
 
 Application: notification-service
 Expected verdict: rejected
-Expected rules: TS-07
 
 ## The candidate
 

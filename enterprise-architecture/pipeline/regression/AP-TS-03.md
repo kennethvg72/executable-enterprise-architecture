@@ -2,7 +2,6 @@
 
 Application: returns-service
 Expected verdict: rejected
-Expected rules: DAT-07
 
 ## The candidate
 

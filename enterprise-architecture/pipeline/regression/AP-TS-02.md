@@ -2,7 +2,6 @@
 
 Application: rejection-triage
 Expected verdict: rejected
-Expected rules: TS-10
 
 ## The candidate
 

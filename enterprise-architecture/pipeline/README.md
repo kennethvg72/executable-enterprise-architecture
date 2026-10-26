@@ -87,15 +87,17 @@ The lane is for when the provider is down, not when its answer is inconvenient.
 
 ## Running the pipeline here
 
-The Governance Agent runs once per release candidate, as a command, never as a conversation: whoever wants the release never talks to the judge ([AGT-01](../principles/ai-agents.md#agt-01-separate-agents-for-separate-duties)). Pin a model from a different family than the one that built the application ([AGT-03](../principles/ai-agents.md#agt-03-use-different-models-for-independence)), after it has passed the regression set ([AGT-11](../principles/ai-agents.md#agt-11-the-ai-providers-are-governed-like-any-other-dependency)):
+The Governance Agent runs once per release candidate, as a command, never as a conversation: whoever wants the release never talks to the judge ([AGT-01](../principles/ai-agents.md#agt-01-separate-agents-for-separate-duties)). Pin a model from a different family than the one that built the application ([AGT-03](../principles/ai-agents.md#agt-03-use-different-models-for-independence)), after it has passed the regression set twice in a row ([AGT-11](../principles/ai-agents.md#agt-11-the-ai-providers-are-governed-like-any-other-dependency)). The providers the tools can ask are `openai-codex` (the Codex CLI) and `anthropic-claude` (the Claude Code CLI), both without a conversation, reading only:
 
 ```sh
-node enterprise-architecture/tools/regression.ts <provider> <model>      # writes pipeline/regression/results/...
-# then pin provider, model and that result in pipeline/models.yaml: a release of the pipeline
+node enterprise-architecture/tools/regression.ts <provider> <model>      # twice; each writes pipeline/regression/results/...
+# then pin provider, model and both results in pipeline/models.yaml: a release of the pipeline
 node enterprise-architecture/tools/govern.ts <application repository> <candidate id> [--isolated]
 ```
 
-`regression.ts` shows the model each sample without its answer, next to a copy of the architecture that leaves the regression set out. `govern.ts` refuses a model that isn't pinned with a passing result, clones the candidate at its commit, runs the deterministic stage, and asks the model, sandboxed read-only, for the verdict. A model can't approve what the deterministic stage didn't pass. The record goes to the verdict store (`VERDICT_STORE`, or `~/verdict-store`) once, with the transcript and the deterministic output, and is never overwritten; the team gets a copy next to the candidate. Exit 0 approved, 1 rejected, 3 no verdict.
+**The review runs in passes**, because a model asked about every rule at once forgets some, and nobody can tell which. The tool computes the checklist from the rule texts: every rule whose "Verified by" says `review`, in the architectures the candidate pins. It splits them into passes of at most ten rules, keeping a file's rules together. Each pass is a fresh question, with the rules' full text and the anti-patterns that break them, and must answer every one of its rules: compliant, non-compliant or not applicable, with evidence in a file that exists. One more pass looks across all the rules, with the whole anti-pattern catalog, for what falls between the passes. A rule left unanswered, or answered without evidence, means no verdict. **The tool decides**, not a model: any non-compliant rule or finding the Board hasn't excepted rejects, and so does a deterministic stage that didn't pass. A model writes only the reasons and the path forward of a rejection.
+
+`regression.ts` shows the model each sample without its answer, next to a copy of the architecture that leaves the regression set out, in the same passes a real candidate's rules get. `govern.ts` refuses a model that isn't pinned with two passing results, clones the candidate from the application's remote at its commit (a commit that isn't on the remote doesn't exist), runs the deterministic stage, and then the passes. The record goes to the verdict store (`VERDICT_STORE`, or `~/verdict-store`) once, with every rule's answer, the transcripts and the deterministic output, and is never overwritten; the team gets a copy next to the candidate. Exit 0 approved, 1 rejected, 3 no verdict.
 
 The deterministic stage is one command:
 

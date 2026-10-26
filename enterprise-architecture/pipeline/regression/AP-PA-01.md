@@ -2,7 +2,6 @@
 
 Application: support-rota
 Expected verdict: rejected
-Expected rules: PA-02
 
 ## The candidate
 

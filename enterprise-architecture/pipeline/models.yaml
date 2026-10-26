@@ -1,11 +1,13 @@
 # The AI models the central agents run on (AGT-11). A gate input (SEC-14): changing it takes
 # signatures from the Board and Central IT, and the regression set must pass with the new model
-# first. Exact versions only: a model that changes underneath the pipeline changes the gate.
+# first, twice in a row. Exact versions only: a model that changes underneath the pipeline changes the gate.
 
 governance-agent:
-  provider: <the Board-accepted provider, e.g. openai-codex, the one tools/lib/models.ts can ask>
+  provider: <the Board-accepted provider, openai-codex or anthropic-claude, the ones tools/lib/models.ts can ask>
   model: <exact model version>
-  regression: <path of the passing result for exactly this provider and model, from tools/regression.ts>
+  regression:                       # two passing results for exactly this provider and model, from tools/regression.ts
+    - <path of the first run's result>
+    - <path of the second run's result>
 security-agent:
   provider: <a different provider from the Governance Agent's (AGT-03)>
   model: <exact model version>

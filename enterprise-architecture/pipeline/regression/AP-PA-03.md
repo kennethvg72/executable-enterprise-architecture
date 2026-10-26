@@ -2,7 +2,6 @@
 
 Application: equipment-loans
 Expected verdict: rejected
-Expected rules: PA-08
 
 ## The candidate
 

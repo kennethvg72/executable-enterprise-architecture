@@ -92,7 +92,7 @@ test('a report older than the latest change to the requirements is refused', () 
 });
 
 test('goals in force belong in the inventory too', () => {
-  const a = app('3.2.2');
+  const a = app('3.3.0');
   writeFileSync(join(a.dir, 'docs', 'requirements.md'), `# Requirements
 
 ## Goals

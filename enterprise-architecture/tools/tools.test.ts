@@ -434,8 +434,17 @@ test('every anti-pattern breaks a rule that exists, and has a regression sample 
     assert.ok(existsSync(sample), `${e.id} has no regression sample`);
     const text = readFileSync(sample, 'utf8');
     assert.match(text, /^Expected verdict: rejected$/m, `${e.id}'s sample has no expected verdict`);
-    const expected = (/^Expected rules: (.+)$/m.exec(text)?.[1] ?? '').split(/[,|]/).map((r) => r.trim()).filter(Boolean);
-    assert.ok(expected.length && expected.every((r) => cited.includes(r)), `${e.id}'s sample expects ${expected.join(', ')}, not rules the anti-pattern cites`);
+    // Which rules it breaks is the catalog's to say, in one place: the sample doesn't repeat it.
+    assert.doesNotMatch(text, /^Expected rules:/m, `${e.id}'s sample lists its own rules; the catalog entry's "Breaks" is the only list`);
+  }
+  // Several violations in different domains (MV-): each rule exists, and they are judged in different files' passes.
+  const known = ruleIds();
+  for (const f of readdirSync(regression).filter((f) => /^MV-.*\.md$/.test(f))) {
+    const text = readFileSync(join(regression, f), 'utf8');
+    const expected = (/^Expected rules: (.+)$/m.exec(text)?.[1] ?? '').split(',').map((r) => r.trim()).filter(Boolean);
+    assert.match(text, /^Expected verdict: rejected$/m, `${f} isn't a rejected sample`);
+    assert.ok(expected.length >= 2 && expected.every((r) => known.has(r)), `${f} expects rules that don't exist, or fewer than two`);
+    assert.ok(new Set(expected.map((r) => r.split('-')[0])).size >= 2, `${f}'s rules are all in one domain`);
   }
   // And no sample without an anti-pattern: the set and the catalog stay one thing.
   const ids = new Set(entries.map((e) => e.id));

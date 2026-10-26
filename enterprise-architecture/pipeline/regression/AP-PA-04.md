@@ -2,7 +2,6 @@
 
 Application: expense-claims
 Expected verdict: rejected
-Expected rules: PA-04
 
 ## The candidate
 
