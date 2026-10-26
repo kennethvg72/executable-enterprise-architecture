@@ -317,6 +317,7 @@ test('Board exceptions are validated before they cover anything, and cover only 
     ['an owner who left', { owner: 'aquinn' }],
     ['expired', { granted: '2025-01-01', expires: '2025-12-31' }],
     ['no compensating controls', { 'compensating-controls': ' ' }],
+    ['no reason: no decision without intent', { reason: ' ' }],
   ];
   for (const [name, change] of broken) assert.ok(exceptionProblems({ ...real, ...change }, today).length > 0, `accepted: ${name}`);
   const applied = applyExceptions([fail('DAT-02', 'Taxpayer identifiers in the warehouse.'), fail('DAT-02', 'Full names copied to a spreadsheet.'), fail('DAT-01', 'No classification.')], [real]);
@@ -329,7 +330,8 @@ test('Board exceptions are validated before they cover anything, and cover only 
 });
 
 test('a candidate is judged against the versions it pins, or the stage says it can\'t (OWN-04)', () => {
-  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '4.0.0' }).map((r) => r.status), ['pass']);
+  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '4.1.0' }).map((r) => r.status), ['pass']);
+  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '4.0.0' }).map((r) => r.status), ['pass'], 'an older minor passes');
   // A deprecated major isn't in this checkout: judge it against its own tag.
   assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '3.3.0' }).map((r) => r.status), ['skip']);
   assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '2.0.0' }).map((r) => r.status), ['skip']);
@@ -518,4 +520,15 @@ test('container images are pinned to a version or a digest (SEC-05)', () => {
   assert.ok(found.some((x) => /compose\.yaml:5: the image redis:latest/.test(x)));
   assert.ok(found.some((x) => /Dockerfile:5: the image nginx/.test(x)));
   assert.ok(runPipeline(APP, { today: new Date('2026-10-14') }).sections.some(([title]) => title === 'Container images (SEC-05)'), 'the pipeline runs it');
+});
+
+test('no decision without intent: every decided proposal records the Board\'s reasoning', () => {
+  const dir = join(REPO_ROOT, 'enterprise-architecture', 'governance', 'proposals');
+  const decided = readdirSync(dir).filter((f) => f.endsWith('.md')).map((f) => ({ f, text: readFileSync(join(dir, f), 'utf8') }))
+    .filter(({ text }) => /^Decision: \S/m.test(text));
+  assert.ok(decided.length >= 10);
+  for (const { f, text } of decided) {
+    const reasoning = /^Reasoning: (.*)$/m.exec(text)?.[1]?.trim() ?? '';
+    assert.ok(reasoning.length >= 20 && !/^<|not given/i.test(reasoning), `${f}: a decision without the Board's reasoning isn't taken`);
+  }
 });

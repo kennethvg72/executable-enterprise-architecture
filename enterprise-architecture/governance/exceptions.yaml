@@ -1,7 +1,8 @@
 # Exceptions granted by the Architecture Board. The pipeline reads this file; applications
 # can't grant themselves exceptions. Every exception has an owner, an expiry date (at most
-# 12 months), the rules and the one finding it covers, and the compensating controls
-# (governance/escalation.md).
+# 12 months), the rules and the one finding it covers, the compensating controls, and the
+# Board's own reason: no decision without intent (governance/escalation.md,
+# governance/architecture-board.md).
 
 exceptions:
   - id: EXC-2026-003

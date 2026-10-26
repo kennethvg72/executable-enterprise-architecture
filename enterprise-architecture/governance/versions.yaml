@@ -52,9 +52,13 @@ architectures:
       activated: 2026-10-26
       proposal: enterprise-architecture/governance/proposals/2026-009-the-review-in-passes.md
     - version: 4.0.0
-      status: active
+      status: superseded            # by 4.1.0, a minor version: applications pinning it pass as if they pinned 4.1.0
       activated: 2026-10-26
       proposal: enterprise-architecture/governance/proposals/2026-010-lessons-from-real-use.md
+    - version: 4.1.0
+      status: active
+      activated: 2026-10-26
+      proposal: enterprise-architecture/governance/proposals/2026-011-no-decision-without-intent.md
 
   typescript-web:
     - version: 1.0.0

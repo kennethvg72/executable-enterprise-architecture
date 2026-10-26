@@ -31,4 +31,4 @@ Proposed activation date, and decommission date for the version it replaces. Nev
 
 Date:
 Decision: accepted | changed (how) | withdrawn
-Reasoning:
+Reasoning: <the Board's own, never only an agent's; a decision without one isn't taken (architecture-board.md, "No decision without intent")>

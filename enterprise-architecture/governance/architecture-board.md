@@ -26,3 +26,11 @@ Members need real technical breadth, enough depth to challenge specialists as pe
 - Changes to the architecture are proposed as pull requests against this repository, using the [proposal template](../templates/architecture-proposal.md). Anyone can propose, including agents (through an escalation) and the Board itself.
 - Before a version becomes mandatory, it is **run against the landscape** ([lifecycle.md](lifecycle.md)). Agents identify conflicts and estimate the changes needed. Some findings reveal shortcomings in existing systems; others reveal shortcomings in the proposal. Both are what the Board wants to learn.
 - Decisions are recorded in the proposal: what was decided, why, and what evidence was used.
+
+## No decision without intent
+
+Every decision of the Board (a proposal's acceptance, an exception, an accepted risk, a choice between options) records its reason, given by the Board. An agent may propose a reason; it becomes the Board's only when the Board gives or confirms it. A decision without a reason isn't taken: it is recorded as "reason not given", with the question, and nothing that depends on it is activated.
+
+**Why.** A decision without a reason can't be weighed against a later one, or retired when its reason is gone. And having to write the reason is what makes the people deciding own the decision, instead of letting it happen. That is [AGT-12](../principles/ai-agents.md#agt-12-intent-stays-in-force-until-it-is-withdrawn), for the Board itself.
+
+**Verified by.** `test`: an exception without a reason covers nothing, and every decided proposal has its reasoning. `review`: the Governance Agent and the next [architecture review](architecture-review.md) read the reasons.
