@@ -17,33 +17,44 @@ architectures:
       decommission-date: 2027-06-01
       proposal: enterprise-architecture/governance/proposals/2026-002-intent-drift-review.md
     - version: 3.0.0
-      status: superseded            # by 3.3.0: applications pinning it pass as if they pinned 3.3.0
+      status: deprecated
+      decommission-date: 2027-06-01
       activated: 2026-10-22
       proposal: enterprise-architecture/governance/proposals/2026-003-every-request-says-why.md
     - version: 3.1.0
-      status: superseded            # by 3.3.0
+      status: deprecated
+      decommission-date: 2027-06-01
       activated: 2026-10-22
       proposal: enterprise-architecture/governance/proposals/2026-004-a-reason-says-what-it-is-for.md
     - version: 3.1.1
-      status: superseded            # by 3.3.0
+      status: deprecated
+      decommission-date: 2027-06-01
       activated: 2026-10-25
       proposal: enterprise-architecture/governance/proposals/2026-005-two-tool-fixes.md
     - version: 3.2.0
-      status: superseded            # by 3.3.0
+      status: deprecated
+      decommission-date: 2027-06-01
       activated: 2026-10-25
       proposal: enterprise-architecture/governance/proposals/2026-006-the-judge-is-a-command.md
     - version: 3.2.1
-      status: superseded            # by 3.3.0
+      status: deprecated
+      decommission-date: 2027-06-01
       activated: 2026-10-25
       proposal: enterprise-architecture/governance/proposals/2026-007-a-judge-that-can-read.md
     - version: 3.2.2
-      status: superseded            # by 3.3.0
+      status: deprecated
+      decommission-date: 2027-06-01
       activated: 2026-10-25
       proposal: enterprise-architecture/governance/proposals/2026-008-the-wildcard-breaks-the-egress-rule.md
     - version: 3.3.0
-      status: active
+      status: deprecated
+      decommission-date: 2027-06-01
       activated: 2026-10-26
       proposal: enterprise-architecture/governance/proposals/2026-009-the-review-in-passes.md
+    - version: 4.0.0
+      status: active
+      activated: 2026-10-26
+      proposal: enterprise-architecture/governance/proposals/2026-010-lessons-from-real-use.md
 
   typescript-web:
     - version: 1.0.0
@@ -91,8 +102,13 @@ architectures:
 
   infrastructure:
     - version: 1.0.0
-      status: active
+      status: deprecated
       activated: 2026-10-14
+      decommission-date: 2027-06-01
+    - version: 2.0.0
+      status: active
+      activated: 2026-10-26
+      proposal: enterprise-architecture/governance/proposals/2026-010-lessons-from-real-use.md
 
 # Rules the Board has made mandatory for every application, regardless of pinned version.
 mandatory-immediately: []

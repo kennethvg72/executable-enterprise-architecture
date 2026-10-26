@@ -35,7 +35,7 @@ Check, and install if missing (asking first): `git`, and **Node.js 24 or later**
 
 ## 3. The architecture, and its checks
 
-Clone this repository if you're not already in it, and run its own checks:
+Clone this repository if you're not already in it, and run its own checks. Clone it whole, not with `--depth 1`: the version tags and the history are what the pipeline checks the architecture against ([AGT-04](enterprise-architecture/principles/ai-agents.md#agt-04-agents-read-the-architecture-they-dont-edit-it)). Don't change its files' permissions either; a checkout that differs from its tag isn't the approved architecture.
 
 ```sh
 npm ci

@@ -41,3 +41,8 @@ These rules implement the central [resilience](../enterprise-architecture/princi
 **Rule.** Every change to sites, links, quorum members or database clusters runs the [failure simulation](tools/simulate.ts). The scenarios in [failure-scenarios.md](failure-scenarios.md) are exercised for real on the schedule in [RES-09](../enterprise-architecture/principles/resilience.md#res-09-resilience-is-tested-not-asserted).
 **Why.** The simulation catches design mistakes in seconds. The exercises catch everything the simulation can't model.
 **Verified by.** `test`.
+
+### INF-09: A backup notices a mass deletion
+**Rule.** Each backup compares what it holds with the previous one. A drop beyond a threshold the backup states (in files, rows or bytes) is shown to the owner of the data, no older copy is removed or expired until a person acknowledges it, outside the application whose data it is, and every further run with such a drop is refused until then.
+**Why.** A backup that faithfully copies a mass deletion, by ransomware, a bug or a mistaken migration, rotates the good copies out one night at a time. The application can't acknowledge for itself: whatever deleted the data may be in control of it.
+**Verified by.** `test`: a backup run with a large drop is refused and keeps its older copies; the weekly restore tests ([INF-06](#inf-06-backups-go-to-immutable-storage-in-the-other-datacenter)).

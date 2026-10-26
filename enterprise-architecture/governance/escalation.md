@@ -47,7 +47,8 @@ There is one way to handle each kind of non-compliance:
 |---|---|
 | A **mandatory rule** is broken | Fix it, or get a Board **exception** (above). Nothing else. |
 | A **default** ("should", "by default") isn't followed | A **decision record** in the application's repository. The Governance Agent judges whether the reason holds. |
-| A Test Agent, Local Governance Agent or Security Agent **finding** that isn't a broken mandatory rule | Fix it, or list it as a proposed **accepted risk** in the release candidate, with a reason. The Governance Agent judges the reason. |
+| A Test Agent or Local Governance Agent **finding** that isn't a broken mandatory rule | Fix it; or the Problem Owner **overrules** it, with a reason, and it is listed as overruled in the release candidate; or list it as a proposed **accepted risk** in the release candidate, with a reason. The Governance Agent judges the reason either way. |
+| A Security Agent **finding** that isn't a broken mandatory rule | Fix it, or list it as a proposed **accepted risk** in the release candidate, with a reason. The Governance Agent judges the reason. Nobody overrules it locally. |
 | A **High or Critical security finding** | Never accepted locally. Fix it, or get a Board exception ([SEC-08](../principles/security.md#sec-08-security-findings-have-deadlines-not-opinions)). |
 
-The Problem Owner and the Development Agent can *propose* that a risk be accepted. Neither can *accept* one ([AGT-02](../principles/ai-agents.md#agt-02-neither-the-problem-owner-nor-the-development-agent-can-overrule-the-test-or-governance-agents)).
+The Problem Owner and the Development Agent can *propose* that a risk be accepted. Neither can *accept* one. The Problem Owner can overrule a local agent's finding, on the record, and the Governance Agent still judges it ([AGT-02](../principles/ai-agents.md#agt-02-nobody-overrules-the-governance-agent-and-a-local-finding-is-overruled-only-on-the-record)).

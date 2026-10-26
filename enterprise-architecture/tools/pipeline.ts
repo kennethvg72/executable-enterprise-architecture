@@ -24,6 +24,7 @@ import { parseArgs } from 'node:util';
 import { verifyInfrastructure } from '../../infrastructure/tools/verify.ts';
 import { verifyNetwork } from '../../network/tools/verify.ts';
 import { checkDependencies } from './check-dependencies.ts';
+import { checkImages } from './check-images.ts';
 import { checkIntent } from './check-intent.ts';
 import { checkLinks } from './check-links.ts';
 import { REPO_ROOT, intentChanges, loadManifest, loadModel, loadPlatform, readYaml, withApplications } from './lib/load.ts';
@@ -117,6 +118,7 @@ export function runPipeline(appDir: string, options: { candidateDir?: string | u
 
   sections.push(['Secrets (SEC-03)', scanSecrets(appDir)]);
   sections.push(['Dependencies (SIM-01, SIM-05, SEC-05)', checkDependencies(appDir)]);
+  sections.push(['Container images (SEC-05)', checkImages(appDir)]);
   // The model as the candidate asks for it: its manifest's intent, on the landscape's addresses.
   // A change to a registered application is checked exactly like a new application (lib/load.ts).
   const platform = loadPlatform(manifest.runtime.technology);

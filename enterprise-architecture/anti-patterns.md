@@ -101,3 +101,33 @@ Each entry has four parts: what it **looks like** in a diff, **why it hurts**, t
 **Why it hurts.** Nobody can use it to choose between two ways of building the request, to resolve a conflict with another request, or to tell later whether it still holds. The drift review can only check the letter.
 **Breaks.** [AGT-12](principles/ai-agents.md#agt-12-intent-stays-in-force-until-it-is-withdrawn).
 **Instead.** Ask what it is for: who benefits, what problem it solves, what goes wrong without it. If the Problem Owner doesn't know yet, record their words and an open question. A fix that names what it remedies ("to remedy the bug introduced by version 2.3.1") is a reason.
+
+### AP-16: The user's regex on the main thread
+**Looks like.** A search box, a saved filter or a routing rule that takes a regular expression from a user and runs `new RegExp(input)` against data, in the request handler.
+**Why it hurts.** JavaScript's engine backtracks: a pattern like `(\w+\.?)+` can take seconds to hours on a line it doesn't match, and holds the CPU the whole time. One saved filter blocks every request the service handles, and every search that uses it does it again.
+**Breaks.** [SEC-06](principles/security.md#sec-06-all-input-is-hostile), [RES-08](principles/resilience.md#res-08-everything-is-bounded).
+**Instead.** Offer plain text, wildcards or a list of choices. Where a regular expression is really needed, refuse dangerous shapes and bound its length when it is saved, and run it in a worker with a time limit, or with an engine that doesn't backtrack.
+
+### AP-17: The reason the agent wrote
+**Looks like.** A requirements log or decision log full of fluent, plausible reasons, in the same voice, that the Problem Owner never gave. The agent filled the column, and nobody can tell which reasons are the owner's.
+**Why it hurts.** A reason the Problem Owner didn't give can't be used to judge what they meant, or to tell when it no longer holds. It looks like intent, and it is the agent's guess.
+**Breaks.** [AGT-12](principles/ai-agents.md#agt-12-intent-stays-in-force-until-it-is-withdrawn).
+**Instead.** Record each reason with who gave it. An agent's suggestion is a question to the Problem Owner, and the answer goes in their words; until then, "not given", with the open question.
+
+### AP-18: The socket that is root
+**Looks like.** A management, monitoring or update container that mounts the container runtime's socket (`/var/run/docker.sock`) "to manage the other containers".
+**Why it hurts.** The socket is root on the host. Whoever controls that container, through a bug in a dashboard or a dependency it pulls, controls every container and the host itself.
+**Breaks.** [SEC-09](principles/security.md#sec-09-least-privilege-for-workloads).
+**Instead.** No workload gets the socket. Containers are managed by the deployment process, outside the workloads, with its own identity.
+
+### AP-19: Root runs what anyone can write
+**Looks like.** A root cron job, a systemd unit or a deployment hook that runs a script from a directory other users or workloads can write to: a shared checkout, a world-writable tree, a mounted volume.
+**Why it hurts.** Anyone who can write there runs as root, the next time the job runs. The privilege isn't in the script; it is in the directory.
+**Breaks.** [SEC-09](principles/security.md#sec-09-least-privilege-for-workloads).
+**Instead.** What root runs is owned by root, writable by nobody else, and installed by the deployment process from a commit.
+
+### AP-20: The open proxy
+**Looks like.** A forward proxy that accepts any client (`Allow 0.0.0.0/0`) and forwards to any destination, without authentication, because it sits on a network "nobody else is on".
+**Why it hurts.** Anything that reaches the proxy reaches everything the proxy reaches. One compromised workload on that network gets an exit to the internet that bypasses the egress policy.
+**Breaks.** [ZTN-03](../network/standards.md#ztn-03-default-deny-inbound-and-outbound-on-every-host), [SEC-02](principles/security.md#sec-02-nothing-is-trusted-because-of-where-it-is).
+**Instead.** A proxy allows each declared client only its declared destinations, as the egress proxy does; anything else is refused and logged.

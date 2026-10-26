@@ -12,6 +12,7 @@ import { join } from 'node:path';
 import { anchor, checkLinks } from './check-links.ts';
 import { stringify } from 'yaml';
 import { checkDependencies, sectionMentions } from './check-dependencies.ts';
+import { checkImages, imagesIn, unpinned } from './check-images.ts';
 import { REPO_ROOT, clone, intentChanges, loadExceptions, loadManifest, loadModel, withApplications } from './lib/load.ts';
 import { fail, pass } from './lib/report.ts';
 import { verifyNetwork } from '../../network/tools/verify.ts';
@@ -328,11 +329,11 @@ test('Board exceptions are validated before they cover anything, and cover only 
 });
 
 test('a candidate is judged against the versions it pins, or the stage says it can\'t (OWN-04)', () => {
-  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '3.1.0' }).map((r) => r.status), ['pass']);
-  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '3.0.0' }).map((r) => r.status), ['pass'], 'an older minor passes');
+  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '4.0.0' }).map((r) => r.status), ['pass']);
   // A deprecated major isn't in this checkout: judge it against its own tag.
+  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '3.3.0' }).map((r) => r.status), ['skip']);
   assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '2.0.0' }).map((r) => r.status), ['skip']);
-  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '4.0.0' }).map((r) => r.status), ['skip']);
+  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '5.0.0' }).map((r) => r.status), ['skip']);
   // An older minor passes as the active one.
   assert.deepEqual(checkPinnedVersions({ 'typescript-web': '1.0.0' }).map((r) => r.status), ['pass']);
   assert.deepEqual(checkPinnedVersions({ 'no-such-architecture': '1.0.0' }).map((r) => r.status), ['skip']);
@@ -459,9 +460,62 @@ test('every anti-pattern breaks a rule that exists, and has a regression sample 
 
 test('an older minor version passes as the active one; a deprecated major warns (OWN-04)', () => {
   const m = clone(loadManifest(APP));
-  m.architecture = { 'enterprise-architecture': '3.1.0', 'typescript-web': '1.0.0', network: '1.0.0', infrastructure: '1.0.0' };
+  m.architecture = { 'enterprise-architecture': '4.0.0', 'typescript-web': '1.0.0', network: '1.0.0', infrastructure: '2.0.0' };
   const own04 = validateManifest(APP, m).filter((r) => r.rule === 'OWN-04');
   assert.ok(own04.some((r) => r.status === 'pass' && /typescript-web 1\.0\.0 is superseded by 1\.2\.0/.test(r.message)));
   m.architecture['enterprise-architecture'] = '1.0.0';
   assert.ok(validateManifest(APP, m).some((r) => r.rule === 'OWN-04' && r.status === 'warn' && /2027-06-01/.test(r.message)));
+});
+
+test('files an application owns are a data store too, on file storage the landscape declares (DAT-06)', () => {
+  const m = clone(loadManifest(APP));
+  m.data = [...(m.data ?? []), { store: 'files', path: '/srv/files/rejection-triage/attachments', classification: 'confidential', retention: 'P18M' }];
+  assert.deepEqual(failures(validateManifest(APP, m)), [], 'declared, on declared storage, within its classification');
+  const elsewhere = clone(m);
+  elsewhere.data!.at(-1)!.path = '/home/dwhitfield/exports';
+  assert.ok(failures(validateManifest(APP, elsewhere)).includes('DAT-06'));
+  const tooSensitive = clone(m);
+  tooSensitive.data!.at(-1)!.classification = 'taxpayer-restricted';
+  tooSensitive['technical-owner'] = 'some-team';
+  assert.ok(failures(validateManifest(APP, tooSensitive)).includes('DAT-01'));
+  const forever = clone(m);
+  forever.data!.at(-1)!.retention = 'forever';
+  assert.ok(failures(validateManifest(APP, forever)).includes('DAT-05'));
+});
+
+test('a role\'s group is named, and the Governance Agent is told it can\'t be checked here (IAM-04)', () => {
+  assert.ok(validateManifest(APP, loadManifest(APP)).some((r) => r.rule === 'IAM-04' && r.status === 'warn' && /can't be checked/.test(r.message)));
+});
+
+test('the secret scanner scans what Git tracks: an ignored local .env is no secret in the repository (SEC-03)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'tracked-'));
+  const git = (...args: string[]) => spawnSync('git', ['-C', dir, ...args], { encoding: 'utf8' });
+  git('init', '-q'); git('config', 'user.email', 'test@natax.example'); git('config', 'user.name', 'Test');
+  writeFileSync(join(dir, '.gitignore'), '.env\n');
+  writeFileSync(join(dir, 'app.ts'), 'export const port = 8443;\n');
+  writeFileSync(join(dir, '.env'), `DB_PASSWORD=${'s3cr3t'}Value9\n`);
+  git('add', '-A'); git('commit', '-qm', 'app');
+  assert.deepEqual(failures(scanSecrets(dir)), [], 'the ignored .env is the developer\'s own');
+  writeFileSync(join(dir, 'config.env.yaml'), `password: ${'s3cr3t'}Value9\n`);
+  git('add', '-A'); git('commit', '-qm', 'oops');
+  assert.deepEqual(failures(scanSecrets(dir)), ['SEC-03'], 'a tracked one is in the repository');
+});
+
+test('container images are pinned to a version or a digest (SEC-05)', () => {
+  assert.equal(unpinned('postgres:18.3'), undefined);
+  assert.equal(unpinned('registry.natax.example/team/app@sha256:' + 'a'.repeat(64)), undefined);
+  assert.match(unpinned('postgres') ?? '', /no tag/);
+  assert.match(unpinned('nginx:latest') ?? '', /registry serves today/);
+  assert.match(unpinned('registry.natax.example:5000/haproxy') ?? '', /no tag/, 'a port is not a tag');
+  assert.match(unpinned('app:${TAG}') ?? '', /variable/);
+  const dockerfile = 'FROM node:24.11.0 AS build\nRUN npm ci\nFROM build AS test\nFROM scratch\nFROM nginx\n';
+  assert.deepEqual(imagesIn('Dockerfile', dockerfile).map((i) => i.ref), ['node:24.11.0', 'nginx'], 'scratch and earlier stages are not images');
+  const dir = mkdtempSync(join(tmpdir(), 'images-'));
+  writeFileSync(join(dir, 'compose.yaml'), 'services:\n  db:\n    image: postgres:18.3\n  cache:\n    image: "redis:latest"\n');
+  writeFileSync(join(dir, 'Dockerfile'), dockerfile);
+  const found = checkImages(dir).filter((r) => r.status === 'fail').map((r) => r.message);
+  assert.equal(found.length, 2);
+  assert.ok(found.some((x) => /compose\.yaml:5: the image redis:latest/.test(x)));
+  assert.ok(found.some((x) => /Dockerfile:5: the image nginx/.test(x)));
+  assert.ok(runPipeline(APP, { today: new Date('2026-10-14') }).sections.some(([title]) => title === 'Container images (SEC-05)'), 'the pipeline runs it');
 });

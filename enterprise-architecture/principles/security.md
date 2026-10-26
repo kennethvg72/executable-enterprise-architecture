@@ -25,14 +25,14 @@ Related: [identity and access](identity-and-access.md), [data](data.md), and the
 **Verified by.** `test`: configuration checks on load balancers, database and service configuration.
 
 ### SEC-05: Dependencies are pinned, sourced and scanned
-**Rule.** Every dependency is pinned to an exact version with a lockfile, comes from a NATAX-approved registry mirror, and is scanned for known vulnerabilities on every release candidate and daily in production. Findings are handled under [SEC-08](#sec-08-security-findings-have-deadlines-not-opinions).
-**Why.** Most of what runs is code that NATAX didn't write. SIM-01 keeps the amount of it small; this rule keeps it under control.
-**Verified by.** `test`.
+**Rule.** Every dependency is pinned to an exact version with a lockfile, comes from a NATAX-approved registry mirror, and is scanned for known vulnerabilities on every release candidate and daily in production. That includes container images: pinned to a version tag, or better, a digest, never `latest` or no tag at all. Findings are handled under [SEC-08](#sec-08-security-findings-have-deadlines-not-opinions).
+**Why.** Most of what runs is code that NATAX didn't write. SIM-01 keeps the amount of it small; this rule keeps it under control. An image tagged `latest` is whatever the registry serves today: a different image tomorrow, unreviewed and unscanned.
+**Verified by.** `test`: [check-images.ts](../tools/check-images.ts) refuses an unpinned image in a compose file, a Dockerfile or a manifest.
 
 ### SEC-06: All input is hostile
-**Rule.** Applications validate every input at the boundary (type, size, format, allowed values), encode every output for its context (HTML, SQL, shell, URL), and use parameterized queries only. Input from other NATAX services is validated too.
-**Why.** Injection remains the most reliable way into an application. Another internal service may itself be compromised or simply wrong.
-**Verified by.** `test`: static analysis and the Test Agent's attack tests. `review`.
+**Rule.** Applications validate every input at the boundary (type, size, format, allowed values), encode every output for its context (HTML, SQL, shell, URL), and use parameterized queries only. Input from other NATAX services is validated too. Regular expressions from users are bounded: none are accepted where plain text, wildcards or a list of choices will do; where they are accepted, dangerous shapes (a repeated group that holds a repetition) are refused and their length bounded when they are saved, and they run where they can be stopped (a worker with time and memory limits, or an engine that doesn't backtrack), never on the main event loop.
+**Why.** Injection remains the most reliable way into an application. Another internal service may itself be compromised or simply wrong. A user's regular expression is a program the user runs on your servers: a backtracking pattern can hold a CPU for hours on input it doesn't match, so one saved filter can take a service down.
+**Verified by.** `test`: static analysis and the Test Agent's attack tests, including a known catastrophic pattern (`(a+)+$` against a long line that doesn't match), which must be refused or stopped within its limit. `review`.
 
 ### SEC-07: Test environments can't reach production
 **Rule.** Development, test and acceptance environments are isolated from production by network policy and identity. They have no route to production services or data, and production identities aren't valid in them. They use only synthetic data ([DAT-04](data.md#dat-04-non-production-environments-use-synthetic-data-only)).

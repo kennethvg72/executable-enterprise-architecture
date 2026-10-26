@@ -45,6 +45,11 @@ accepted-risks: []               # open findings proposed as accepted risks, for
 #    reason: ...
 #    proposed-by: dwhitfield
 
+overruled: []                    # local findings the Problem Owner overruled, each with their reason (AGT-02)
+#  - finding: docs/reviews/2026-10-19-first-release-test.md#t-2
+#    reason: ...
+#    by: dwhitfield
+
 removal-dates: []                # temporary complexity introduced by this release (SIM-07)
 ```
 
@@ -53,7 +58,7 @@ removal-dates: []                # temporary complexity introduced by this relea
 - The candidate refers to one commit. Everything the pipeline needs is in the repository at that commit: code, tests, migrations, `architecture.yaml`, decisions and reviews.
 - The architecture versions are read from `architecture.yaml` at that commit, not from the candidate. That keeps them in one place.
 - **The pipeline builds the artifacts** from the commit and records their digests. Everything after that (test, acceptance, production) refers to the digests ([DEL-01](../principles/delivery.md#del-01-every-change-is-a-release-candidate-with-evidence)).
-- **Open findings are visible, not hidden.** Any Test Agent or Local Governance Agent finding that is still open must appear in `accepted-risks`. The Governance Agent compares the review files with this list. An open finding missing from the list is a rejection. What may be accepted at all is defined in [findings, risks and exceptions](../governance/escalation.md#findings-risks-and-exceptions).
+- **Open findings are visible, not hidden.** Any Test Agent or Local Governance Agent finding that is still open must appear in `accepted-risks`, or in `overruled` with the Problem Owner's reason ([AGT-02](../principles/ai-agents.md#agt-02-nobody-overrules-the-governance-agent-and-a-local-finding-is-overruled-only-on-the-record)). The Governance Agent compares the review files with these lists, and judges every overruling. An open finding missing from the list is a rejection. What may be accepted at all is defined in [findings, risks and exceptions](../governance/escalation.md#findings-risks-and-exceptions).
 - A candidate is immutable once submitted. A changed candidate is a new candidate with a new id.
 
 ## Evidence provenance

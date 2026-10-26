@@ -436,6 +436,12 @@ services:
       - { external: workforce-idp, purpose: Staff sign-in. }
     peak-vcpu: 4
 
+# Where applications keep files of their own (DAT-06): a directory per application under one of
+# these paths, declared as a data store in its architecture.yaml. Replicated to the other datacenter
+# and backed up with the databases (INF-06).
+file-storage:
+  - { path: /srv/files, classification: confidential, description: Application file storage on every application host, replicated between DC1 and DC2. }
+
 # Applications whose intent lives in their own repository's architecture.yaml, placed here
 # by Central IT before registration. Empty: every application above is registered.
 placements: {}

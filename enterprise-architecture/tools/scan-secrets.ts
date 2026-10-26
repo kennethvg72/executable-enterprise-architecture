@@ -6,6 +6,7 @@
 // "ignore this" would be a self-service exception. A false positive is added to the central
 // allowlist (governance/secret-scan-allowlist.yaml) by its fingerprint, with a reason.
 
+import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
@@ -50,31 +51,36 @@ export function scanSecrets(dir: string, allowlist = join(REPO_ROOT, 'enterprise
   const allowed = new Set((existsSync(allowlist) ? readYaml<{ allowed?: Allowed[] }>(allowlist).allowed ?? [] : []).map((a) => a.fingerprint));
   const findings: Result[] = [];
   let files = 0;
+  const scan = (full: string) => {
+    if (!existsSync(full) || statSync(full).size > MAX_FILE_BYTES) return;
+    files++;
+    readFileSync(full, 'utf8').split('\n').forEach((line, i) => {
+      for (const p of PATTERNS) {
+        if (p.files && !p.files.test(full)) continue;
+        const m = p.regex.exec(line);
+        if (!m) continue;
+        if (p.value !== undefined && PLACEHOLDER.test(m[p.value] ?? '')) continue;
+        const print = fingerprint(m[0]);
+        if (allowed.has(print)) continue;
+        findings.push(fail('SEC-03', `Possible ${p.name} in ${relative(dir, full)}:${i + 1} (fingerprint ${print}).`,
+          'Remove it, rotate the secret (treat it as compromised), and load it from the secret store at runtime. If it really isn\'t a secret, ask Central IT to add its fingerprint to the central allowlist.'));
+        break;
+      }
+    });
+  };
   const walk = (path: string) => {
     for (const entry of readdirSync(path)) {
       if (SKIP_DIRS.has(entry)) continue;
       const full = join(path, entry);
-      const stat = statSync(full);
-      if (stat.isDirectory()) walk(full);
-      else if (stat.size <= MAX_FILE_BYTES) {
-        files++;
-        readFileSync(full, 'utf8').split('\n').forEach((line, i) => {
-          for (const p of PATTERNS) {
-            if (p.files && !p.files.test(full)) continue;
-            const m = p.regex.exec(line);
-            if (!m) continue;
-            if (p.value !== undefined && PLACEHOLDER.test(m[p.value] ?? '')) continue;
-            const print = fingerprint(m[0]);
-            if (allowed.has(print)) continue;
-            findings.push(fail('SEC-03', `Possible ${p.name} in ${relative(dir, full)}:${i + 1} (fingerprint ${print}).`,
-              'Remove it, rotate the secret (treat it as compromised), and load it from the secret store at runtime. If it really isn\'t a secret, ask Central IT to add its fingerprint to the central allowlist.'));
-            break;
-          }
-        });
-      }
+      if (statSync(full).isDirectory()) walk(full);
+      else scan(full);
     }
   };
-  walk(dir);
+  // In a Git repository, what a release would contain is what Git tracks: a developer's own .env,
+  // ignored and never committed, isn't a secret in the repository. Anywhere else, every file.
+  const tracked = spawnSync('git', ['-C', dir, 'ls-files', '-z', '--cached'], { encoding: 'utf8' });
+  if (tracked.status === 0) for (const f of tracked.stdout.split('\0').filter(Boolean)) scan(join(dir, f));
+  else walk(dir);
   return findings.length ? findings : [pass('SEC-03', `No secrets found in ${files} files.`)];
 }
 

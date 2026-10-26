@@ -166,6 +166,8 @@ export function validateManifest(appDir: string, manifest: Manifest, options: Op
     results.push(fail('IAM-04', 'Every role must be assigned through an IdP group.', 'Add a group to each role.'));
   } else {
     results.push(pass('IAM-04', `${m.users.roles.length} role(s), each assigned through an IdP group.`));
+    // A named group proves nothing until the IdP confirms it exists and holds the right people.
+    results.push(warn('IAM-04', `The roles' groups (${m.users.roles.map((r) => r.group).join(', ')}) can't be checked against the workforce IdP here.`, 'The Governance Agent checks that each group exists in the IdP and is the one the role means.'));
   }
 
   // ---- DAT-01, DAT-05, DAT-06: declared data stores, on the stores the platform allows
@@ -179,6 +181,25 @@ export function validateManifest(appDir: string, manifest: Manifest, options: Op
       if (!d.retention || !ISO_DURATION.test(d.retention)) {
         results.push(fail('DAT-05', `${d.store} has no valid retention period ("${d.retention ?? ''}").`, 'Set retention as an ISO 8601 duration, for example P18M.'));
       }
+      continue;
+    }
+    // Files an application owns are a data store too: on file storage the landscape declares (DAT-06).
+    if (d.store === 'files') {
+      const area = (landscape['file-storage'] ?? []).find((f) => (d.path ?? '').startsWith(`${f.path.replace(/\/+$/, '')}/`));
+      if (!platform['data-stores'].includes('files')) {
+        results.push(fail('DAT-06', `${platform.platform} doesn't keep files as a data store.`, `See platforms/${platform.platform}/standards.md.`));
+      } else if (!area) {
+        results.push(fail('DAT-06', `Files at "${d.path ?? ''}" are not on file storage the landscape declares.`, `Use a directory under ${(landscape['file-storage'] ?? []).map((f) => f.path).join(' or ') || 'the landscape\'s file storage'}, or ask Central IT to declare the storage.`));
+      } else if (!CLASSIFICATION_ORDER.includes(d.classification)) {
+        results.push(fail('DAT-01', `Unknown classification "${d.classification}" for ${d.path}.`, `Use one of: ${CLASSIFICATION_ORDER.join(', ')}.`));
+      } else if (CLASSIFICATION_ORDER.indexOf(d.classification) > CLASSIFICATION_ORDER.indexOf(area.classification)) {
+        results.push(fail('DAT-01', `${d.path} holds ${d.classification} data, but ${area.path} only accepts up to ${area.classification}.`, 'Keep it in core-db, or stop storing it (DAT-02).'));
+      } else {
+        results.push(pass('DAT-06', `Files at ${d.path}, on ${area.path}: ${d.classification}.`));
+      }
+      results.push(!d.retention || !ISO_DURATION.test(d.retention)
+        ? fail('DAT-05', `Files at ${d.path ?? '?'} have no valid retention period ("${d.retention ?? ''}").`, 'Set retention as an ISO 8601 duration, for example P18M.')
+        : pass('DAT-05', `Files at ${d.path} retention ${d.retention}.`));
       continue;
     }
     const cluster = landscape.services[d.store];

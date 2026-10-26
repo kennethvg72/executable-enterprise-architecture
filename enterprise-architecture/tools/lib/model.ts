@@ -112,6 +112,8 @@ export interface Landscape {
   'platform-flows': PlatformFlow[];
   services: Record<string, Omit<Service, 'id' | 'source'>>;
   placements: Record<string, Placement>;
+  /** Where applications may keep files of their own (DAT-06): a declared path, and the most sensitive data it may hold. */
+  'file-storage'?: { path: string; classification: Classification; description?: string }[];
 }
 
 export interface Manifest {
@@ -127,8 +129,9 @@ export interface Manifest {
     roles: { name: string; group: string; description?: string }[];
   };
   data?: {
-    store: string;
-    database: string;
+    store: string;                 // a database cluster from the landscape, or "files"
+    database?: string;             // for a database cluster
+    path?: string;                 // for files: a directory on the landscape's file storage
     classification: Classification;
     'system-of-record-for'?: string[];
     'derived-copies'?: string[];
