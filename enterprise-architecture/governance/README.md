@@ -8,7 +8,8 @@ Architecture should govern engineering. Engineering must also challenge and impr
 | How architecture versions are proposed, activated, deprecated and retired | [lifecycle.md](lifecycle.md) |
 | Which versions exist and their status (machine-readable) | [versions.yaml](versions.yaml) |
 | What happens when a solution can't comply; findings, risks and exceptions | [escalation.md](escalation.md) |
-| Exceptions the Board has granted (machine-readable) | [exceptions.yaml](exceptions.yaml) |
+| Exceptions the Board has granted, one file per application, shared system or site (machine-readable) | [exceptions/](exceptions/) |
+| What each application's deployments may do, one file per application (machine-readable, DEL-08) | [deployment-grants/](deployment-grants/) |
 | How the architecture itself is reviewed and simplified | [architecture-review.md](architecture-review.md) |
 
 ## The short version

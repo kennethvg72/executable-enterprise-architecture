@@ -3,6 +3,8 @@
 
 Every connection NATAX production allows: 179 flows. Everything else is denied.
 
+In production, this file is in the network's own repository, and each application sees only its own flows (ZTN-10). It is public here because NATAX is fictional, under the Board's exception EXC-2026-004.
+
 | From | To | Port | Purpose | Declared in |
 |---|---|---|---|---|
 | advisor-portal | calc-engine | 8443 | advisor-portal uses calc-engine api | enterprise-architecture/landscape/landscape.yaml |

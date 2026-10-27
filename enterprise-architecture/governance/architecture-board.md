@@ -14,6 +14,7 @@ Members need real technical breadth, enough depth to challenge specialists as pe
 2. **Resolves escalations** ([escalation.md](escalation.md)) within five business days, or two during the filing season.
 3. **Improves the architecture from evidence.** It reads the architecture feedback in pipeline verdicts, the escalations, the exceptions and their trends, and the results of [architecture reviews](architecture-review.md).
 4. **Decides what may be automated.** The Board decides which rules the Governance Agent may approve on its own, and which need a human. Today the Governance Agent decides every release candidate; the Board decides architecture changes and exceptions.
+5. **Decides what the stewards can't.** A deployment grant on a shared system is decided by its steward and the Governance Agent between them. It comes to the Board when it would break intent declared earlier, or when nobody stewards what it touches ([OWN-10](../principles/ownership.md#own-10-a-shared-system-has-one-steward)). So does a rollback after the verification window: by then it throws away work done since the release ([DEL-03](../principles/delivery.md#del-03-every-release-can-be-rolled-back-to-a-known-good-state)).
 
 ## What the Board doesn't do
 

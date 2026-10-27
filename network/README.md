@@ -58,16 +58,17 @@ The [tests](tools/network.test.ts) do exactly this kind of thing, deterministica
 |---|---|
 | [standards.md](standards.md) | The rules for this domain (ZTN-xx), on top of the central ones |
 | [rollout.md](rollout.md) | How to get from a flat network to this, without breaking production |
-| [expectations.yaml](expectations.yaml) | The Test Agent's explicit expectations, independent of the compiler |
+| [expectations.yaml](expectations.yaml) | The Network Agent's explicit expectations, written from intent, independent of the compiler |
 | [agents/](agents/README.md) | What the agents do differently in this domain |
 | [BOOTSTRAP.md](BOOTSTRAP.md) | Setting up an environment to work on network policy |
 | [tools/](tools/) | The compiler, verifier, prober and flow analyzer |
-| [generated/](generated/) | The output. Never edited by hand ([DEL-04](../enterprise-architecture/principles/delivery.md#del-04-infrastructure-and-network-are-code)). |
+| [generated/](generated/) | The output. Never edited by hand ([DEL-04](../enterprise-architecture/principles/delivery.md#del-04-infrastructure-and-network-are-code)). In production it is in the network's own repository, read only by those who need it ([ZTN-10](standards.md#ztn-10-the-networks-rules-are-read-only-by-those-who-need-them)). |
 | [observed/](observed/) | A sample flow log, and the analyzer's report on it |
 | [findings.md](findings.md) | What broke, or was found, and which of the three causes it was (ZTN-08) |
 
 ## What this example simplifies
 
+- **The rules are public here.** In production, the network's rules, its generated output and its addresses are in a repository of their own, written only by the Network Agent and read only by those who need them; each application sees its own flows ([ZTN-10](standards.md#ztn-10-the-networks-rules-are-read-only-by-those-who-need-them)). They are in this repository because NATAX is fictional and they are the demonstration, under the Board's exception EXC-2026-004 ([exceptions/network.yaml](../enterprise-architecture/governance/exceptions/network.yaml)).
 - Addresses stand in for identities at the network layer. Workload identity at the application layer (mTLS, [IAM-05](../enterprise-architecture/principles/identity-and-access.md#iam-05-every-workload-has-its-own-identity)) is the other half, and isn't generated here.
 - DNS, NTP, the certificate authority and similar basics are left out of the landscape.
 - IPv4 only. Enforcement is rendered for nftables. Rendering the same policy for a commercial firewall, or for Kubernetes network policy, is a different renderer over the same compiled flows.

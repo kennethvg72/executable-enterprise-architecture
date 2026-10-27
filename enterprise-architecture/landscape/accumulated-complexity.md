@@ -36,7 +36,7 @@ Every item has an owner and a date ([SIM-07](../principles/simplicity.md#sim-07-
 
 **What.** The data warehouse receives full copies of submissions through the broker, including taxpayer identifiers. That violates [DAT-02](../principles/data.md#dat-02-collect-and-copy-only-what-the-purpose-needs), and the warehouse runs in DC1 only, as class C.
 
-**What's being done.** A time-boxed Board exception, EXC-2026-003 in [exceptions.yaml](../governance/exceptions.yaml), expiring 2027-06-30, with compensating controls: access limited to four named analysts, quarterly access review, encryption at rest. The replacement feeds the warehouse filing references and aggregates only. **Owner:** Robin Cho.
+**What's being done.** A time-boxed Board exception, EXC-2026-003 in [exceptions/data-warehouse.yaml](../governance/exceptions/data-warehouse.yaml), expiring 2027-06-30, with compensating controls: access limited to four named analysts, quarterly access review, encryption at rest. The replacement feeds the warehouse filing references and aggregates only. **Owner:** Robin Cho.
 
 ## 6. Two kinds of load balancer
 

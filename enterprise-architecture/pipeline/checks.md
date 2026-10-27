@@ -2,7 +2,7 @@
 
 These are the checks the pipeline runs for each affected domain ([change-impact.md](change-impact.md)).
 
-- **Deterministic** checks give the same answer every time and need no AI. They take into account the Board's exceptions ([exceptions.yaml](../governance/exceptions.yaml)) for the application, after checking each one is valid ([escalation](../governance/escalation.md#exceptions); ✅ `lib/exceptions.ts`). A failure that remains after that can't be overridden by anyone, the Governance Agent included.
+- **Deterministic** checks give the same answer every time and need no AI. They take into account the Board's exceptions ([governance/exceptions/](../governance/exceptions/)) for the application, after checking each one is valid ([escalation](../governance/escalation.md#exceptions); ✅ `lib/exceptions.ts`). A failure that remains after that can't be overridden by anyone, the Governance Agent included.
 - **Review** checks are judged by the Governance Agent against the cited rules.
 - The **Here** column shows what this proof of concept implements. ✅ means implemented in this repository's tools; 📄 means the check is described, and a real pipeline would implement it with the named kind of tool. A check that didn't run is reported as skipped, never as passed, and a skipped mandatory check makes the stage **incomplete**, which blocks a verdict like a failure ([pipeline README](README.md#running-the-pipeline-here)).
 
@@ -34,6 +34,8 @@ Evaluated at intake for every candidate, whatever the change. Each can restrict 
 | The application's tests pass, rerun by the pipeline | DEL-02 | Deterministic | ✅ runs the application's `npm test` |
 | Dependencies have a recorded reason and are pinned | SIM-01, SIM-05, SEC-05 | Deterministic | ✅ `enterprise-architecture/tools/check-dependencies.ts` |
 | Dependencies have no known reachable critical vulnerabilities | SEC-05, SEC-08 | Deterministic | 📄 vulnerability scanner against a mirror of advisories |
+| The deployment plan: every step a pre-approved action for the platform, on a granted target, covered by a rollback that undoes it; migrations with their way back; class A and B never stopped; units without privileges | DEL-08, DEL-09, DEL-03, DAT-07, SEC-09, INF-11 | Deterministic + review | ✅ `enterprise-architecture/tools/check-deployment.ts`; the Governance Agent's deployment pass judges the order, the states between steps and whether each rollback restores the known-good state |
+| The Board's exception and grant files are each for something in the landscape; every grant approved and explained; every shared system has a steward | SIM-07, DEL-08, OWN-10 | Deterministic | ✅ `enterprise-architecture/tools/check-deployment.ts` |
 | The Problem Owner's "Release" is authentic: a tag signed with their workforce identity, or approval in the pipeline | AGT-06 | Deterministic | 📄 signature verification; simulated here |
 | The candidate's code runs only in a disposable runner, whose isolation the hostile canary has verified since the runner last changed | SEC-13 | Deterministic | ✅ `pipeline.ts` runs candidate code only with `--isolated`; ✅ the canary and `verify-runner.ts`; 📄 the runner itself |
 | Open local findings are listed in the candidate | AGT-02 | Deterministic + review | 📄 parse review files; the Governance Agent compares them by hand here |

@@ -114,6 +114,57 @@ export interface Landscape {
   placements: Record<string, Placement>;
   /** Where applications may keep files of their own (DAT-06): a declared path, and the most sensitive data it may hold. */
   'file-storage'?: { path: string; classification: Classification; description?: string }[];
+  /** Systems more than one application changes or draws names from, each with its one steward (OWN-10). */
+  'shared-systems'?: Record<string, SharedSystem>;
+}
+
+export interface SharedSystem {
+  steward: string;          // the agent role that alone writes its source
+  covers: string;           // what is in it
+  source: string;           // where its register lives
+  'read-by'?: string[];     // who may read it, when not everyone may (ZTN-10)
+}
+
+/** One right a deployment has, on one named target (DEL-08): governance/deployment-grants/<application>.yaml. */
+export interface Grant {
+  id: string;
+  action: string;
+  target: string;
+  /** The Board, or the steward of the shared system together with the Governance Agent (OWN-10). */
+  'approved-by': string[];
+  granted: string;
+  reason: string;
+  record?: string;
+}
+
+/** A step of a deployment plan, or of one of its rollbacks (DEL-09). */
+export interface PlanStep {
+  id?: string;
+  action: string;
+  target: string;
+  /** Whether the application must be stopped for this step, or can keep running through it. */
+  application: 'must-stop' | 'keeps-running';
+  file?: string;          // systemd-unit, scheduled-task: the unit file, in the application's repository
+  files?: string[];       // migrations: the files, in order; copy-file: the files
+  from?: string;          // restore: the backup step it restores
+}
+
+/** releases/<id>/deployment-plan.yaml: what this release does, and how each step is undone. */
+export interface DeploymentPlan {
+  steps: PlanStep[];
+  rollbacks: { covers: string[]; steps: PlanStep[] }[];
+}
+
+/** A pre-approved deployment action (enterprise-architecture/pipeline/deployment-actions.yaml). */
+export interface DeploymentAction {
+  'runs-on': string[];
+  target: string;
+  /** false: it changes nothing the application runs on (a backup), so there is nothing to undo. */
+  'changes-production': boolean;
+  /** What can undo it, on the same target: an action, or a list of actions that only undo it together, in order. */
+  'undone-by'?: (string | string[])[];
+  /** Only in a rollback, never as a step of its own. */
+  'rollback-only'?: boolean;
 }
 
 export interface Manifest {
@@ -156,9 +207,10 @@ export interface Manifest {
   temporary?: { what: string; owner: string; 'remove-by': string }[];
 }
 
-/** An exception granted by the Architecture Board (governance/exceptions.yaml). */
+/** An exception granted by the Architecture Board (governance/exceptions/<subject>.yaml). */
 export interface Exception {
   id: string;
+  /** The file's name: an application, a shared system or a site in the landscape. */
   application: string;
   rules: string[];
   /** The text of the one finding it covers: a failure of its rules that doesn't contain it stays a failure. */

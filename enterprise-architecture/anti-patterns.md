@@ -131,3 +131,15 @@ Each entry has four parts: what it **looks like** in a diff, **why it hurts**, t
 **Why it hurts.** Anything that reaches the proxy reaches everything the proxy reaches. One compromised workload on that network gets an exit to the internet that bypasses the egress policy.
 **Breaks.** [ZTN-03](../network/standards.md#ztn-03-default-deny-inbound-and-outbound-on-every-host), [SEC-02](principles/security.md#sec-02-nothing-is-trusted-because-of-where-it-is).
 **Instead.** A proxy allows each declared client only its declared destinations, as the egress proxy does; anything else is refused and logged.
+
+### AP-21: Riding someone else's rule
+**Looks like.** Code that connects to an address or port that happens to be reachable, because another application's flow or a rule for a whole zone opens it, without declaring the flow itself: "it already works".
+**Why it hurts.** It works until the other application's need is withdrawn and its rule goes. Then it breaks, maybe years later, for a reason nobody can find, because no intent ever said it should work.
+**Breaks.** [ZTN-02](../network/standards.md#ztn-02-both-sides-declare-every-flow), [ZTN-10](../network/standards.md#ztn-10-the-networks-rules-are-read-only-by-those-who-need-them).
+**Instead.** Declare the flow, on both sides, so it gets a rule of its own, with its own intent.
+
+### AP-22: The deployment that brings its own script
+**Looks like.** A `deploy.sh`, a setup step or a unit's `ExecStartPre` that installs packages, changes the host firewall, creates users or restarts other services with the deployment's rights, "so the deployment only has to run this".
+**Why it hurts.** The candidate's own code runs with the deployment process's rights, outside its grants. Whatever the script does tomorrow, the deployment does too, and no grant or plan ever shows it.
+**Breaks.** [DEL-08](principles/delivery.md#del-08-a-deployment-does-only-what-it-was-granted-by-name), [INF-11](../infrastructure/standards.md#inf-11-packages-on-hosts-change-only-with-the-infrastructure).
+**Instead.** A deployment plan of pre-approved actions on granted targets ([DEL-09](principles/delivery.md#del-09-every-release-has-a-deployment-plan-and-every-step-a-rollback)). A package goes through the infrastructure's release; a network path is declared, for the Network Agent.

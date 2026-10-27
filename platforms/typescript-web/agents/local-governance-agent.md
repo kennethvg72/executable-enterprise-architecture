@@ -17,6 +17,6 @@ This adds to the [central Local Governance Agent role](../../../enterprise-archi
 - `architecture.yaml` matches the code: every outbound call in `src/` has a `consumes` entry, and every `consumes` entry is used.
 - No dependency outside [approved-dependencies.yaml](../approved-dependencies.yaml) without a decision record; versions pinned; lockfile committed.
 - No framework, no client-side framework, no ORM, no build step, unless a decision record justifies it ([TS-02](../standards.md#ts-02-no-web-framework-by-default) to [TS-04](../standards.md#ts-04-sql-not-an-orm)).
-- Migrations are new files, and backward compatible with the previous release ([DAT-07](../../../enterprise-architecture/principles/data.md#dat-07-schema-changes-are-versioned-and-backward-compatible)).
+- Migrations are new files, and backward compatible with the previous release ([DAT-07](../../../enterprise-architecture/principles/data.md#dat-07-schema-changes-are-versioned-and-each-has-its-way-back)).
 - The Test Agent's findings are fixed or listed; nothing is quietly dropped.
 - The central checks pass: `validate-manifest`, `check-dependencies`, `scan-secrets`, and the network and infrastructure verification if `consumes`, `provides` or `runtime` changed.

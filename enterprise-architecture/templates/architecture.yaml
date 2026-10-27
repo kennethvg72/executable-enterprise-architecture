@@ -13,10 +13,10 @@ landscape-check: docs/decisions/0000-landscape-check.md   # SIM-09: what already
 technical-owner: null                # a team; required for class A, internet exposure, or taxpayer-restricted data (OWN-03)
 
 architecture:                        # pinned versions (OWN-04)
-  enterprise-architecture: 4.1.1
-  typescript-web: 1.3.0
-  network: 1.0.0
-  infrastructure: 2.0.0
+  enterprise-architecture: 5.0.0
+  typescript-web: 1.3.1
+  network: 2.0.0
+  infrastructure: 3.0.0
 
 exposure: internal                   # internal | internet
 
@@ -78,5 +78,6 @@ temporary: []                        # temporary complexity with an end date (SI
 #    owner: jdoe
 #    remove-by: 2027-01-31
 
-# Exceptions are not declared here. Only the Architecture Board grants them, and they are
-# recorded centrally in enterprise-architecture/governance/exceptions.yaml.
+# Exceptions and deployment grants are not declared here. Only the Architecture Board, or a
+# steward with the Governance Agent, grants them, and they are recorded centrally, one file per
+# application: enterprise-architecture/governance/exceptions/ and deployment-grants/.

@@ -1,7 +1,7 @@
-import { readFileSync, existsSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { parse } from 'yaml';
-import type { Consume, Exception, Landscape, Manifest, Model, Provide, Service } from './model.ts';
+import type { Consume, Exception, Grant, Landscape, Manifest, Model, Provide, Service } from './model.ts';
 
 /** The repository root, two levels above enterprise-architecture/tools/lib. */
 export const REPO_ROOT = resolve(import.meta.dirname, '..', '..', '..');
@@ -55,10 +55,21 @@ export function loadPlatform(name: string, root = REPO_ROOT): Platform | undefin
   return existsSync(file) ? readYaml<Platform>(file) : undefined;
 }
 
+/** The Board's decisions of one kind, one file per application, shared system or site, named after it. */
+export function governanceFiles(kind: 'exceptions' | 'deployment-grants', root = REPO_ROOT): { subject: string; file: string }[] {
+  const dir = join(root, 'enterprise-architecture', 'governance', kind);
+  return existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.yaml')).sort().map((f) => ({ subject: f.slice(0, -5), file: join(dir, f) })) : [];
+}
+
 export function loadExceptions(root = REPO_ROOT): Exception[] {
-  return readYaml<{ exceptions: Exception[] | null }>(
-    join(root, 'enterprise-architecture', 'governance', 'exceptions.yaml'),
-  ).exceptions ?? [];
+  return governanceFiles('exceptions', root).flatMap(({ subject, file }) =>
+    (readYaml<{ exceptions: Omit<Exception, 'application'>[] | null }>(file)?.exceptions ?? []).map((e) => ({ ...e, application: subject })));
+}
+
+/** The deployment rights an application was granted (DEL-08). None by default. */
+export function loadGrants(application: string, root = REPO_ROOT): Grant[] {
+  const file = join(root, 'enterprise-architecture', 'governance', 'deployment-grants', `${application}.yaml`);
+  return existsSync(file) ? readYaml<{ grants: Grant[] | null }>(file)?.grants ?? [] : [];
 }
 
 export interface Person {

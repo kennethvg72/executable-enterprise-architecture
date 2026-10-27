@@ -1,0 +1,104 @@
+# The pre-approved deployment actions (DEL-08). Every step of a deployment plan, and of its
+# rollbacks, is one of these, for the application's platform (runs-on in its platform.yaml), on
+# a target the application was granted by name. Each action is one command of the deployment
+# process, from Central IT's infrastructure repository, which checks its input before it changes
+# anything; the deployment process runs these commands, nothing else. A change to this list is a
+# release of the architecture.
+#
+# Not here, on purpose: the network, the load balancers, DNS, the secret store, alert routing,
+# mail addresses and the Power Platform's DLP policies are shared systems, changed by their
+# stewards (OWN-10); packages on hosts change with the infrastructure (INF-11).
+
+actions:
+  # ---- In the datacenters (typescript-web): a process on a VM, under systemd (INF-01)
+  vm-release:
+    runs-on: [datacenters]
+    target: the application's service, on its VMs in the sites it declares, rolling across DC1 and DC2
+    changes-production: true
+    undone-by: [vm-release]                  # the previous release's pinned artifact, again
+  systemd-unit:
+    runs-on: [datacenters]
+    target: a unit of the application's, on its VMs
+    changes-production: true
+    undone-by: [systemd-unit, remove-unit]
+  remove-unit:
+    runs-on: [datacenters]
+    target: a unit of the application's, on its VMs
+    changes-production: true
+    undone-by: [systemd-unit]
+  scheduled-task:
+    runs-on: [datacenters]
+    target: a systemd timer of the application's
+    changes-production: true
+    undone-by: [scheduled-task, remove-scheduled-task]
+  remove-scheduled-task:
+    runs-on: [datacenters]
+    target: a systemd timer of the application's
+    changes-production: true
+    undone-by: [scheduled-task]
+  directory:
+    runs-on: [datacenters]
+    target: a path of the application's, on the file storage
+    changes-production: true
+    undone-by: [remove-directory]
+  remove-directory:
+    runs-on: [datacenters]
+    target: a path of the application's, on the file storage
+    changes-production: true
+    undone-by: [directory, restore]          # restore: when it held data
+  copy-file:
+    runs-on: [datacenters]
+    target: a path of the application's, on the file storage
+    changes-production: true
+    undone-by: [copy-file, delete-file]      # the previous release's version, or none
+  delete-file:
+    runs-on: [datacenters]
+    target: a path of the application's, on the file storage
+    changes-production: true
+    undone-by: [copy-file, restore]
+  migrations:
+    runs-on: [datacenters]
+    target: the application's database, on app-db or core-db
+    changes-production: true
+    undone-by: [migrations, restore]         # its down migrations, or the backup taken before it
+  backup:
+    runs-on: [datacenters]
+    target: the application's database, or its path on the file storage
+    changes-production: false                # it changes nothing the application runs on
+  restore:
+    runs-on: [datacenters]
+    target: the application's database, or its path on the file storage
+    changes-production: true
+    rollback-only: true                      # from a backup step earlier in the same plan
+
+  # ---- On the Power Platform (power-apps): managed solutions (PA-05)
+  solution-import:
+    runs-on: [saas]
+    target: the application's solution, in the production environment
+    changes-production: true
+    undone-by: [solution-import]             # the previous managed solution, re-imported
+
+  # ---- On managed devices (android): NATAX's managed app store (AND-12)
+  store-release:
+    runs-on: [devices]
+    target: the app's listing in the managed app store, rolled out in stages
+    changes-production: true
+    # Undone only by all three, in this order (AND-13): no more devices get it; the backend refuses
+    # it and tells it to send its outbox; then device management uninstalls it and installs the
+    # previous release's own signed APK on each device that updated, once that device's outbox is empty.
+    undone-by: [[halt-rollout, refuse-version, reinstall-previous]]
+  halt-rollout:
+    runs-on: [devices]
+    target: the app's listing in the managed app store
+    changes-production: true
+    rollback-only: true
+  refuse-version:
+    runs-on: [devices]
+    target: the app's listing in the managed app store; its backend refuses the version (AND-12)
+    changes-production: true
+    rollback-only: true
+  reinstall-previous:
+    runs-on: [devices]
+    target: the app's listing; device management reinstalls the previous release's artifact, same digest and signature
+    changes-production: true
+    rollback-only: true

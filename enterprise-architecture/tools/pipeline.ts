@@ -24,11 +24,13 @@ import { parseArgs } from 'node:util';
 import { parse } from 'yaml';
 import { verifyInfrastructure } from '../../infrastructure/tools/verify.ts';
 import { verifyNetwork } from '../../network/tools/verify.ts';
+import { checkDeployment, checkGovernanceFiles } from './check-deployment.ts';
 import { checkDependencies } from './check-dependencies.ts';
 import { checkImages } from './check-images.ts';
 import { checkIntent } from './check-intent.ts';
 import { checkLinks } from './check-links.ts';
 import { REPO_ROOT, intentChanges, loadManifest, loadModel, loadPlatform, readYaml, withApplications } from './lib/load.ts';
+import type { Landscape } from './lib/model.ts';
 import { applyExceptions, exceptionsFor } from './lib/exceptions.ts';
 import { fail, failed, format, pass, skip, warn, type Result } from './lib/report.ts';
 import { scanSecrets } from './scan-secrets.ts';
@@ -37,6 +39,21 @@ import { verifyRunner } from './verify-runner.ts';
 import { GATE_INPUTS, judgeGateChanges } from './verify-gate-inputs.ts';
 
 interface Candidate { id: string; application: string; purpose: string }
+
+/**
+ * What the Board has accepted for the shared systems (OWN-10), on every candidate: each valid
+ * exception is a warning that cites it, and one that isn't valid any more is a failure (SIM-07).
+ */
+export function sharedSystemExceptions(today: Date, root = REPO_ROOT): Result[] {
+  const results: Result[] = [];
+  const shared = readYaml<Landscape>(join(root, 'enterprise-architecture', 'landscape', 'landscape.yaml'))['shared-systems'] ?? {};
+  for (const name of Object.keys(shared)) {
+    const { valid, problems } = exceptionsFor(name, today, root);
+    for (const e of valid) results.push(warn(e.rules.join(', '), `${name}: ${e.finding}. Accepted by the Board as ${e.id} until ${e.expires}; compensating controls: ${e['compensating-controls'].trim()}`));
+    results.push(...problems);
+  }
+  return results.length ? results : [pass('SIM-07', 'No exceptions for the shared systems.')];
+}
 
 /** DEL-05: from April 16 to May 3, class A and B release only fixes. */
 export function checkFreeze(today: Date, resilienceClass: string, purpose: string | undefined): Result {
@@ -114,12 +131,15 @@ export function runPipeline(appDir: string, options: { candidateDir?: string | u
   // say who is in which group, which this proof of concept doesn't have.
   intake.push(...judgeGateChanges([{ commit: 'HEAD', files: GATE_INPUTS.filter((g) => !g.includes('*')), signers: [] }], undefined, options.today ?? new Date()));
   intake.push(...checkPinnedVersions(manifest.architecture ?? {}));
+  intake.push(...checkGovernanceFiles());
   sections.push(['Intake and manifest', intake]);
   sections.push(['Intent (AGT-12)', checkIntent(appDir, { candidateDir: options.candidateDir })]);
 
   sections.push(['Secrets (SEC-03)', scanSecrets(appDir)]);
   sections.push(['Dependencies (SIM-01, SIM-05, SEC-05)', checkDependencies(appDir)]);
   sections.push(['Container images (SEC-05)', checkImages(appDir)]);
+  // What this release's deployment does, against what the application was granted by name.
+  sections.push(['Deployment (DEL-08, DEL-09)', checkDeployment(appDir, manifest, options.candidateDir)]);
   // The model as the candidate asks for it: its manifest's intent, on the landscape's addresses.
   // A change to a registered application is checked exactly like a new application (lib/load.ts).
   const platform = loadPlatform(manifest.runtime.technology);
@@ -136,6 +156,8 @@ export function runPipeline(appDir: string, options: { candidateDir?: string | u
   sections.push(['Changes against production (impact)', impact()]);
   sections.push(['Network policy (network)', verifyNetwork(withApplications(loadModel(), [appDir]), { drift: false })]);
   sections.push(['Infrastructure (load balancing, capacity, resilience)', verifyInfrastructure(withApplications(loadModel(), [appDir]), { drift: false })]);
+  // What the Board accepted for the shared systems every application depends on, in view on every candidate.
+  sections.push(['Shared systems (accepted exceptions)', sharedSystemExceptions(options.today ?? new Date())]);
   sections.push(['Documentation links', checkLinks()]);
 
   // Everything above is judged from the architecture. Only now does the candidate's own code run:
@@ -218,7 +240,7 @@ export function runPipeline(appDir: string, options: { candidateDir?: string | u
  * text, and its template's manifest, if it has one.
  */
 const ARCHITECTURE_PATHS: Record<string, { dir: string; data: string[]; template?: string }> = {
-  'enterprise-architecture': { dir: 'enterprise-architecture', template: 'enterprise-architecture/templates/architecture.yaml', data: ['enterprise-architecture/landscape', 'enterprise-architecture/governance/exceptions.yaml', 'enterprise-architecture/governance/versions.yaml', 'enterprise-architecture/governance/secret-scan-allowlist.yaml', 'enterprise-architecture/governance/proposals'] },
+  'enterprise-architecture': { dir: 'enterprise-architecture', template: 'enterprise-architecture/templates/architecture.yaml', data: ['enterprise-architecture/landscape', 'enterprise-architecture/governance/exceptions', 'enterprise-architecture/governance/deployment-grants', 'enterprise-architecture/governance/versions.yaml', 'enterprise-architecture/governance/secret-scan-allowlist.yaml', 'enterprise-architecture/governance/proposals'] },
   network: { dir: 'network', data: ['network/generated', 'network/observed'] },
   infrastructure: { dir: 'infrastructure', data: ['infrastructure/generated'] },
 };

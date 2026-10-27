@@ -10,13 +10,15 @@ import { type Result, fail, pass, skip, warn } from './lib/report.ts';
 
 /** What the pipeline reads to decide. A change to any of these is a change to the gate. */
 export const GATE_INPUTS = [
-  'enterprise-architecture/governance/exceptions.yaml',
+  'enterprise-architecture/governance/exceptions/',
+  'enterprise-architecture/governance/deployment-grants/',
   'enterprise-architecture/governance/secret-scan-allowlist.yaml',
   'enterprise-architecture/governance/versions.yaml',
   'enterprise-architecture/landscape/landscape.yaml',
   'enterprise-architecture/landscape/workforce-directory.yaml',
   'enterprise-architecture/agents/',
   'enterprise-architecture/pipeline/models.yaml',
+  'enterprise-architecture/pipeline/deployment-actions.yaml',
   'enterprise-architecture/tools/',
   'network/tools/', 'network/expectations.yaml', 'network/runtime-versions.yaml',
   'infrastructure/tools/', 'infrastructure/runtime-versions.yaml',

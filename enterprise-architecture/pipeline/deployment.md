@@ -4,19 +4,57 @@ The deployment process is the only identity with production write access. It dep
 
 Most of this page describes services in DC1 and DC2. Power Apps and Android apps are delivered differently; see [per platform](#per-platform) below. The environments are the same idea everywhere: test and acceptance with synthetic data ([DAT-04](../principles/data.md#dat-04-non-production-environments-use-synthetic-data-only)), then production, and nothing reaches production by any other route.
 
+## What a deployment may do
+
+A deployment does only what its plan says, and only what was granted ([DEL-08](../principles/delivery.md#del-08-a-deployment-does-only-what-it-was-granted-by-name)). Every step is one of the [pre-approved actions](deployment-actions.yaml) for the application's platform, on a target the application was granted by name in `governance/deployment-grants/<application>.yaml`. The deployment process reads the grants from the approved architecture, never from the candidate. Each action is one of its commands, from Central IT's infrastructure repository, which checks its input before it changes anything; the deployment process runs those commands, and nothing else.
+
+## The deployment plan
+
+Every release candidate has one, `releases/<id>/deployment-plan.yaml` ([DEL-09](../principles/delivery.md#del-09-every-release-has-a-deployment-plan-and-every-step-a-rollback)): what this release does, step by step, and how each step is undone. The application's manifest and its grants say what it *may* do; the plan says what *this* release does.
+
+```yaml
+steps:
+  - id: backup-triage
+    action: backup
+    target: rejection_triage           # its database, on app-db
+    application: keeps-running         # or must-stop; a class A or B service never stops
+  - id: migrate
+    action: migrations
+    target: rejection_triage
+    application: keeps-running         # the previous version works on the new schema (DAT-07)
+    files: [db/migrations/0042-add-callback-slots.sql]
+  - id: release
+    action: vm-release
+    target: rejection-triage           # its service: its VMs in DC1 and DC2, rolling
+    application: keeps-running
+rollbacks:
+  - covers: [migrate, release]         # one rollback for several steps together
+    steps:
+      - { action: vm-release, target: rejection-triage, application: keeps-running }   # the previous artifact
+      - { action: migrations, target: rejection_triage, application: keeps-running, files: [db/migrations/0042-add-callback-slots.down.sql] }
+```
+
+- **Every step** is a pre-approved action for the platform, on a granted target, and says whether the application must stop for it. A class A or B service in the datacenters never stops: it is deployed rolling, below.
+- **Every step that changes production** is covered by exactly one rollback, which contains what undoes it on the same target. A backup changes nothing the application runs on, so it needs none.
+- **A rollback is executable actions**, never a description. For a migration, that is its down migrations, or a restore of a backup the plan made before it, `{ action: restore, target: rejection_triage, from: backup-triage }` ([DAT-07](../principles/data.md#dat-07-schema-changes-are-versioned-and-each-has-its-way-back)). When undoing it would delete data, the plan backs that data up first.
+- **Not in a plan:** the network, the load balancers, DNS, the secret store, alert routing, mail addresses and the Power Platform's DLP policies are shared systems, changed by their stewards ([OWN-10](../principles/ownership.md#own-10-a-shared-system-has-one-steward)). A release that needs a change there declares it in its manifest, and the shared system's change is released before it. Packages on hosts change with the infrastructure ([INF-11](../../infrastructure/standards.md#inf-11-packages-on-hosts-change-only-with-the-infrastructure)).
+- **A step that isn't granted** fails at intake. The Governance Agent escalates the request for the grant: to the steward of the shared system it touches, or to the Architecture Board when it would break intent declared earlier.
+
+`check-deployment.ts` checks all of this before anything runs. The Governance Agent judges what no rule can decide: the order, whether every state between steps works, whether "keeps-running" is true, and whether each rollback really restores the known-good state.
+
 ## Order of changes
 
-A release can change the application, the database schema, the network policy and the load balancer at once. The order matters. The rule is **expand before, contract after**:
+A release can change the application, the database schema and its files at once; the network paths and load balancer configuration it needs are their stewards' changes, released before it. The order matters. The rule is **expand before, contract after**:
 
-1. **Expand.** Add new network paths, new load balancer configuration and new database grants. Apply expanding schema migrations. All of these must be harmless for the current version of the application.
+1. **Expand.** Add new database grants, directories and files. Apply expanding schema migrations. All of these must be harmless for the current version of the application.
 2. **Deploy the application**, rolling (below).
-3. **Contract**, only after the new version is verified everywhere, and only in a *later* release: remove network paths, load balancer configuration, grants and schema elements the old version needed.
+3. **Contract**, only after the new version is verified everywhere, and only in a *later* release: remove grants, files and schema elements the old version needed; the stewards remove the network paths and load balancer configuration.
 
-This way, every intermediate state is one in which both the old and the new version work. That is what makes rollback possible at any point ([DEL-03](../principles/delivery.md#del-03-every-release-can-be-rolled-back-in-minutes)).
+This way, every intermediate state is one in which both the old and the new version work. That is what makes rollback possible at any point ([DEL-03](../principles/delivery.md#del-03-every-release-can-be-rolled-back-to-a-known-good-state)).
 
 ## Test and acceptance
 
-Deploy the artifact, apply the expand steps, then run what the impact requires ([checks.md](checks.md)): integration tests, contract tests, targeted network probes for new and removed paths, the [Security Agent](../agents/security-agent.md)'s attack, failure tests, the migration upgrade test, and the rollback rehearsal. Any failure is a rejection with a path forward.
+Deploy the artifact, apply the expand steps, then run what the impact requires ([checks.md](checks.md)): integration tests, contract tests, targeted network probes for new and removed paths, the [Security Agent](../agents/security-agent.md)'s attack, failure tests, and, for a migration the application keeps running through, the previous release's tests against the new schema ([DAT-07](../principles/data.md#dat-07-schema-changes-are-versioned-and-each-has-its-way-back)). Any failure is a rejection with a path forward. Nobody rehearses the deployment or its rollback: the Central Agents judge them ([DEL-03](../principles/delivery.md#del-03-every-release-can-be-rolled-back-to-a-known-good-state)).
 
 ## Rolling deployment to production
 
@@ -42,7 +80,11 @@ The absolute floors keep a quiet service from rolling back because one request i
 
 ## Rollback
 
-Rollback is a separate procedure, built for speed rather than caution: it redeploys the previous artifact to every instance, one datacenter at a time, without verification windows between instances. It must restore service within 10 minutes ([DEL-03](../principles/delivery.md#del-03-every-release-can-be-rolled-back-in-minutes)). Observation continues afterwards. Schema migrations are not reversed: because they are backward compatible, the previous version runs on the new schema ([DAT-07](../principles/data.md#dat-07-schema-changes-are-versioned-and-backward-compatible)).
+Rollback runs the plan's rollbacks, for the steps that ran, in reverse order: it returns to the known-good state before the release, data included ([DEL-03](../principles/delivery.md#del-03-every-release-can-be-rolled-back-to-a-known-good-state)). It is a separate procedure, built for speed rather than caution: in the datacenters it redeploys the previous artifact to every instance, one datacenter at a time, without verification windows between instances. Observation continues afterwards.
+
+- **When.** During the verification window, the pipeline rolls back by itself, at once. After the window, a rollback runs only with the Architecture Board's approval: by then it would throw away real work done since the release. Going forward with a fix is a new release.
+- **How long.** A rollback that restores no data restores service within 10 minutes. One that restores data takes as long as a careful restore needs.
+- **Migrations** are undone by their down migrations, after the previous artifact is back on every instance (it runs on the new schema, DAT-07), or by restoring the backup the plan made before them. A backup the plan made is production data: it has the data's classification, and it is kept until the next release's plan replaces it, so a rollback the Board approves after the window still has it ([DAT-05](../principles/data.md#dat-05-retention-is-defined-and-automated)). The scheduled backups are separate, and no deployment touches them ([DAT-08](../principles/data.md#dat-08-a-backup-isnt-a-backup-until-it-has-been-restored)).
 
 ## Per platform
 
@@ -52,8 +94,8 @@ Rollback is a separate procedure, built for speed rather than caution: it redepl
 | **Test and acceptance** | Imported into the test environment, with test connections and synthetic data; the Playwright and permission tests run there | Installed on managed emulators and test devices, against the backend's test environment |
 | **Production** | Imported into the production environment by the deployment process's own identity; connection references and environment variables set from the release | Published to NATAX's managed app store as a private app, in stages: 5% of devices, then 25%, then everyone, each stage observed for a day |
 | **Verification** | Flow failures and the app's errors compared with the hour before | Crash rate and the backend's error rate for the new version, compared with the previous version; a crash rate above the alert threshold halts the rollout |
-| **Rollback** | Re-import the previous managed solution | Halt the rollout and ship the previous build with a higher version code; old versions keep working against the API ([AND-12](../../platforms/android/standards.md#and-12-old-versions-can-be-retired)) |
-| **Data changes** | Provisioning scripts, backward compatible across one release | Room migrations on the device; the backend's API stays compatible with every version still in use |
+| **Rollback** | Re-import the previous managed solution (`solution-import`) | Three steps, together ([AND-13](../../platforms/android/standards.md#and-13-offline-work-survives-an-update-and-a-rollback)): halt the rollout; the backend refuses the version and tells it to send its outbox; then, on each device that updated and once its outbox is empty, device management uninstalls the app and installs the previous release's own signed APK. No rebuild: the same artifact, by digest ([DEL-01](../principles/delivery.md#del-01-every-change-is-a-release-candidate-with-evidence)) |
+| **Data changes** | Provisioning scripts, backward compatible across one release | Room migrations on the device; the backend's API stays compatible with every version still in use, and sync accepts the outbox of the two previous versions (AND-13) |
 
 ## Registration
 

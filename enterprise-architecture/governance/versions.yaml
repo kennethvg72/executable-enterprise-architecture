@@ -52,21 +52,28 @@ architectures:
       activated: 2026-10-26
       proposal: enterprise-architecture/governance/proposals/2026-009-the-review-in-passes.md
     - version: 4.0.0
-      status: superseded            # by 4.1.1, a minor version: applications pinning it pass as if they pinned 4.1.1
+      status: deprecated            # by 5.0.0
+      decommission-date: 2027-06-01
       activated: 2026-10-26
       proposal: enterprise-architecture/governance/proposals/2026-010-lessons-from-real-use.md
     - version: 4.1.0
-      status: superseded
+      status: deprecated            # by 5.0.0
+      decommission-date: 2027-06-01
       activated: 2026-10-26
       proposal: enterprise-architecture/governance/proposals/2026-011-no-decision-without-intent.md
     - version: 4.1.1
-      status: active
+      status: deprecated            # by 5.0.0
+      decommission-date: 2027-06-01
       activated: 2026-10-27
       proposal: enterprise-architecture/governance/proposals/2026-012-a-change-is-a-version.md
+    - version: 5.0.0
+      status: active
+      activated: 2026-10-27
+      proposal: enterprise-architecture/governance/proposals/2026-013-deployments-and-shared-systems.md
 
   typescript-web:
     - version: 1.0.0
-      status: superseded            # by 1.3.0, a minor version: applications pinning it pass as if they pinned 1.3.0
+      status: superseded            # by 1.3.1: applications pinning it pass as if they pinned 1.3.1
       activated: 2026-10-14
     - version: 1.1.0
       status: superseded
@@ -77,9 +84,13 @@ architectures:
       activated: 2026-10-22
       proposal: enterprise-architecture/governance/proposals/2026-003-every-request-says-why.md
     - version: 1.3.0
-      status: active
+      status: superseded            # by 1.3.1, a patch: applications pinning it pass as if they pinned 1.3.1
       activated: 2026-10-27
       proposal: enterprise-architecture/governance/proposals/2026-012-a-change-is-a-version.md
+    - version: 1.3.1
+      status: active                # links only: DEL-03 and DAT-07 have new titles
+      activated: 2026-10-27
+      proposal: enterprise-architecture/governance/proposals/2026-013-deployments-and-shared-systems.md
 
   power-apps:
     - version: 1.0.0
@@ -96,21 +107,33 @@ architectures:
 
   android:
     - version: 1.0.0
-      status: superseded            # by 1.2.0, a minor version: applications pinning it pass as if they pinned 1.2.0
+      status: deprecated            # by 2.0.0
+      decommission-date: 2027-06-01
       activated: 2026-10-14
     - version: 1.1.0
-      status: superseded
+      status: deprecated            # by 2.0.0
+      decommission-date: 2027-06-01
       activated: 2026-10-22
       proposal: enterprise-architecture/governance/proposals/2026-002-intent-drift-review.md
     - version: 1.2.0
-      status: active
+      status: deprecated            # by 2.0.0
+      decommission-date: 2027-06-01
       activated: 2026-10-22
       proposal: enterprise-architecture/governance/proposals/2026-003-every-request-says-why.md
+    - version: 2.0.0
+      status: active
+      activated: 2026-10-27
+      proposal: enterprise-architecture/governance/proposals/2026-013-deployments-and-shared-systems.md
 
   network:
     - version: 1.0.0
-      status: active
+      status: deprecated            # by 2.0.0
+      decommission-date: 2027-06-01
       activated: 2026-10-14
+    - version: 2.0.0
+      status: active
+      activated: 2026-10-27
+      proposal: enterprise-architecture/governance/proposals/2026-013-deployments-and-shared-systems.md
 
   infrastructure:
     - version: 1.0.0
@@ -118,9 +141,14 @@ architectures:
       activated: 2026-10-14
       decommission-date: 2027-06-01
     - version: 2.0.0
-      status: active
+      status: deprecated            # by 3.0.0
+      decommission-date: 2027-06-01
       activated: 2026-10-26
       proposal: enterprise-architecture/governance/proposals/2026-010-lessons-from-real-use.md
+    - version: 3.0.0
+      status: active
+      activated: 2026-10-27
+      proposal: enterprise-architecture/governance/proposals/2026-013-deployments-and-shared-systems.md
 
 # Rules the Board has made mandatory for every application, regardless of pinned version.
 mandatory-immediately: []

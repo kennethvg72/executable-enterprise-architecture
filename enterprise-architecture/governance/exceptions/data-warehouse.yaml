@@ -1,12 +1,12 @@
-# Exceptions granted by the Architecture Board. The pipeline reads this file; applications
-# can't grant themselves exceptions. Every exception has an owner, an expiry date (at most
-# 12 months), the rules and the one finding it covers, the compensating controls, and the
-# Board's own reason: no decision without intent (governance/escalation.md,
-# governance/architecture-board.md).
+# The exceptions the Architecture Board granted for data-warehouse. One file per application,
+# shared system or site in the landscape, named after it (governance/escalation.md). The pipeline
+# reads these files; applications can't grant themselves exceptions. Every exception has an
+# owner, an expiry date (at most 12 months), the rules and the one finding it covers, the
+# compensating controls, and the Board's own reason: no decision without intent
+# (governance/architecture-board.md).
 
 exceptions:
   - id: EXC-2026-003
-    application: data-warehouse
     rules: [DAT-02]
     finding: taxpayer identifiers   # the one finding covered; other DAT-02 findings still fail
     reason: >

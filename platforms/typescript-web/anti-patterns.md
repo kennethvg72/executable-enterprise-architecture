@@ -17,5 +17,5 @@ Recognizable ways of breaking the [TypeScript standards](standards.md), with the
 ### AP-TS-03: The migration that breaks the running version
 **Looks like.** A migration that renames or drops a column, or adds a required one, in the same release as the code that stops or starts using it.
 **Why it hurts.** During a rolling deployment the old version runs on the new schema, and a rollback runs it there for good: it fails, and rollback stops being an option.
-**Breaks.** [DAT-07](../../enterprise-architecture/principles/data.md#dat-07-schema-changes-are-versioned-and-backward-compatible).
+**Breaks.** [DAT-07](../../enterprise-architecture/principles/data.md#dat-07-schema-changes-are-versioned-and-each-has-its-way-back).
 **Instead.** Expand, then contract: add first, switch the code, remove in a later release.

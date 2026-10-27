@@ -35,6 +35,7 @@ evidence:
   test-review: docs/reviews/2026-10-19-first-release-test.md
   governance-review: docs/reviews/2026-10-19-first-release-governance.md
   intent-drift: docs/reviews/2026-10-19-intent-drift.md   # the whole recorded intent, re-read (AGT-12)
+  previous-release-tests: docs/reviews/2026-10-19-previous-release-tests.txt   # when a migration keeps the application running (DAT-07)
   models:                        # which model produced what (AGT-03); record exact model ids
     development: claude
     test: codex
@@ -59,6 +60,7 @@ removal-dates: []                # temporary complexity introduced by this relea
 - The architecture versions are read from `architecture.yaml` at that commit, not from the candidate. That keeps them in one place.
 - **The pipeline builds the artifacts** from the commit and records their digests. Everything after that (test, acceptance, production) refers to the digests ([DEL-01](../principles/delivery.md#del-01-every-change-is-a-release-candidate-with-evidence)).
 - **Open findings are visible, not hidden.** Any Test Agent or Local Governance Agent finding that is still open must appear in `accepted-risks`, or in `overruled` with the Problem Owner's reason ([AGT-02](../principles/ai-agents.md#agt-02-nobody-overrules-the-governance-agent-and-a-local-finding-is-overruled-only-on-the-record)). The Governance Agent compares the review files with these lists, and judges every overruling. An open finding missing from the list is a rejection. What may be accepted at all is defined in [findings, risks and exceptions](../governance/escalation.md#findings-risks-and-exceptions).
+- **Its deployment plan is next to it**, in `releases/<id>/deployment-plan.yaml`: every step, and how each is undone ([deployment.md](deployment.md#the-deployment-plan)). A candidate without one deploys nothing, and is rejected.
 - A candidate is immutable once submitted. A changed candidate is a new candidate with a new id.
 
 ## Evidence provenance
@@ -70,7 +72,7 @@ The candidate collects evidence; it doesn't prove it. The pipeline checks where 
 | The Problem Owner's "Release" | The release tag is signed with the Problem Owner's workforce identity, or they approved the submission in the pipeline after signing in. |
 | Test and Local Governance reviews | They come from the Problem Owner's environment, under the Problem Owner's accountability, and they're not proof: the Governance Agent reads the diff itself, and the Security Agent attacks the result ([AGT-01](../principles/ai-agents.md#agt-01-separate-agents-for-separate-duties)). |
 | Test results | The pipeline reruns the tests itself. The candidate's `test-results.txt` is only for reference. |
-| Exceptions | They are in the Board's registry ([exceptions.yaml](../governance/exceptions.yaml)), never in the application's repository. |
+| Exceptions and deployment grants | They are in the Board's registries ([exceptions/](../governance/exceptions/), [deployment-grants/](../governance/deployment-grants/)), never in the application's repository. |
 
 In this proof of concept, evidence is files in the repository, and the "Release" isn't signed. A real pipeline must not accept that.
 

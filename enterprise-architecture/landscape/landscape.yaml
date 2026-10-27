@@ -445,3 +445,50 @@ file-storage:
 # Applications whose intent lives in their own repository's architecture.yaml, placed here
 # by Central IT before registration. Empty: every application above is registered.
 placements: {}
+
+# Systems more than one application changes, or draws names from (OWN-10). Each has one steward,
+# working for the team that owns the system: the only agent that writes its source; everyone else
+# asks it. The steward's tests come from the intents, never from its entries, and run against
+# both the generated configuration and the live system.
+shared-systems:
+  network:
+    steward: network-agent           # for Central IT's network specialists
+    covers: >
+      The host firewalls, the HQ router, the site links and zones, the platform flows, and the
+      egress proxy's allowlist: everything network/tools generates.
+    source: >
+      The network's own repository (ZTN-10). In this public repository, network/ and its
+      generated/ output, under exception EXC-2026-004.
+    read-by: [network-agent, governance-agent, security-agent, network-specialists, deployment]
+  load-balancers:
+    steward: platform-steward        # for Central IT's platform team
+    covers: The edge ADC's and the platform load balancer's frontends, backends and health checks.
+    source: Generated from the manifests' provides (via, frontend-port, health) by infrastructure/tools.
+  dns:
+    steward: platform-steward
+    covers: The names in NATAX's DNS zones, and who owns each one.
+    source: Central IT's DNS repository.
+  secret-store:
+    steward: platform-steward
+    covers: The secret store's paths, and which workload identity may read which.
+    source: Central IT's secret-store policy repository.
+  file-storage:
+    steward: platform-steward
+    covers: The paths on the application file storage, and which application owns each one.
+    source: This landscape (file-storage) and the applications' manifests (DAT-06).
+  observability:
+    steward: platform-steward
+    covers: The alert routes, and which team each alert pages.
+    source: Central IT's observability repository, from the manifests' alerts.
+  mail-addresses:
+    steward: platform-steward
+    covers: The addresses NATAX sends from and receives on, through the email provider, and who owns each one.
+    source: Central IT's mail repository.
+  databases:
+    steward: db-steward              # for Central IT's database team
+    covers: The databases and roles on app-db and core-db, and which application owns each.
+    source: This landscape (each cluster's databases) and the applications' manifests.
+  power-platform:
+    steward: power-platform-steward  # for the Power Platform admins in Central IT
+    covers: The DLP policies, the connectors allowed in each environment, and the environments themselves.
+    source: Central IT's Power Platform governance repository (PA-05, PA-08).

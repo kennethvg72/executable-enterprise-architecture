@@ -1,0 +1,21 @@
+# The exceptions the Architecture Board granted for the network, a shared system (OWN-10). The
+# pipeline shows a shared system's exceptions on every candidate. See data-warehouse.yaml for
+# what every exception has.
+
+exceptions:
+  - id: EXC-2026-004
+    rules: [ZTN-10]
+    finding: the network's rules are in the architecture repository   # readable by every application's agents
+    reason: >
+      The Board: "keep them in but note that in a production environment they should be in
+      their own repository, and add it as exception". NATAX is fictional, and its generated
+      rules are the demonstration of this architecture: they are what readers of this public
+      repository come to see.
+    compensating-controls: >
+      Nothing in them is real: the sites, zones and addresses are fictional. network/README.md
+      and generated/flows.md say that in production they are in the network's own repository,
+      and ZTN-10 says who may read it there. Renewed only while this repository is public.
+    owner: jalvarez
+    granted: 2026-10-27
+    expires: 2027-10-26
+    record: enterprise-architecture/governance/proposals/2026-013-deployments-and-shared-systems.md

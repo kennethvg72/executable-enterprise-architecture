@@ -38,6 +38,8 @@ NATAX builds and changes solutions with a small cast of humans and AI agents. Ea
 | **Test Agent** | AI, local | Writes and maintains the tests. Tries to break the solution. | [test-agent.md](test-agent.md) |
 | **Security Agent** | AI, central | Attacks release candidates in acceptance, and the landscape when threats change. Reports findings; never decides. | [security-agent.md](security-agent.md) |
 | **Governance Agent** | AI, central | Judges release candidates against the architecture, runs the required checks, and decides. | [governance-agent.md](governance-agent.md) |
+| **Steward Agent** | AI, central | Keeps a shared system's source for the team that owns it, with an intent for every entry; tests it from the intents and judges conflicts between them. Approves changes together with the Governance Agent; never deploys ([OWN-10](../principles/ownership.md#own-10-a-shared-system-has-one-steward)). | [steward-agent.md](steward-agent.md) |
+| **Network Agent** | AI, central | The steward of the network, for Central IT's network specialists: the only one who writes its rules. | [network/agents/](../../network/agents/README.md#network-agent) |
 | **Architecture Board** | Humans | Accountable for the architecture and for what the pipeline is allowed to approve. Resolves escalations. | [governance/](../governance/README.md) |
 | **Specialists** | Humans | Network, database, security and platform experts. They define what "correct" looks like in their architecture (network, infrastructure or a platform), instead of doing repetitive configuration. | Their architecture's folder |
 | **Central IT** | Humans | Owns the platforms and the pipeline. | — |

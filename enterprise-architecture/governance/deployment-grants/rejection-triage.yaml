@@ -1,0 +1,33 @@
+# What rejection-triage's deployments may do (DEL-08): one grant per action, on one named target.
+# Nothing is granted by default: an application without a file here can deploy nothing. A grant
+# is approved by the steward of the shared system it touches together with the Governance Agent,
+# or by the Architecture Board when it would break intent declared earlier (OWN-10), and records
+# who approved it and why: no decision without intent. One file per application, named after it,
+# a gate input signed as SEC-14 requires. Applications can't grant themselves anything.
+
+grants:
+  - id: DG-2026-001
+    action: vm-release
+    target: rejection-triage        # its service: its VMs in DC1 and DC2, rolling
+    approved-by: [board]
+    granted: 2026-10-27
+    reason: A release of the service is its artifact on its VMs, under systemd (INF-01), rolled out across DC1 and DC2.
+    record: enterprise-architecture/governance/proposals/2026-013-deployments-and-shared-systems.md
+  - id: DG-2026-002
+    action: migrations
+    target: rejection_triage        # its database on app-db, owned by it in the landscape
+    approved-by: [db-steward, governance-agent]
+    granted: 2026-10-27
+    reason: The triage state is its system of record (DAT-03), and its schema changes with its releases (DAT-07).
+  - id: DG-2026-003
+    action: backup
+    target: rejection_triage
+    approved-by: [db-steward, governance-agent]
+    granted: 2026-10-27
+    reason: A migration that would delete data on its way back is backed up first (DAT-07).
+  - id: DG-2026-004
+    action: restore
+    target: rejection_triage
+    approved-by: [db-steward, governance-agent]
+    granted: 2026-10-27
+    reason: The rollback of a migration it backed up first (DEL-03).

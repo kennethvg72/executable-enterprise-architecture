@@ -81,10 +81,10 @@ The candidate's own test results are **its claims**: they catch honest mistakes,
 
 ### SEC-14: The gate's inputs change only with two people
 **Rule.** Everything the pipeline reads to decide is a **gate input**:
-- the exceptions, the secret-scan allowlist and the version statuses (`governance/exceptions.yaml`, `secret-scan-allowlist.yaml`, `versions.yaml`);
+- the exceptions, the deployment grants, the secret-scan allowlist and the version statuses (`governance/exceptions/`, `governance/deployment-grants/`, `secret-scan-allowlist.yaml`, `versions.yaml`);
 - the landscape and the workforce directory, because registering an application feeds network policy, and whoever edits the directory can make an owner "active";
 - the agents' role files, central and per platform;
-- the pipeline's own code, and the files it takes rules from: `platform.yaml`, approved dependencies and connectors, network expectations, runtime versions, and the pinned models ([pipeline/models.yaml](../pipeline/models.yaml)).
+- the pipeline's own code, and the files it takes rules from: `platform.yaml`, approved dependencies and connectors, network expectations, runtime versions, the pinned models ([pipeline/models.yaml](../pipeline/models.yaml)), and the pre-approved deployment actions ([pipeline/deployment-actions.yaml](../pipeline/deployment-actions.yaml)).
 
 The list is kept in [verify-gate-inputs.ts](../tools/verify-gate-inputs.ts). Every change to a gate input carries **two signatures from distinct workforce identities**: one in the Architecture Board's group, one in Central IT. Group membership is resolved from the workforce IdP when the signatures are verified, never from a file Central IT could edit.
 

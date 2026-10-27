@@ -239,6 +239,8 @@ export function renderFlowTable(policy: Policy): string {
     '',
     `Every connection NATAX production allows: ${rows.length} flows. Everything else is denied.`,
     '',
+    "In production, this file is in the network's own repository, and each application sees only its own flows (ZTN-10). It is public here because NATAX is fictional, under the Board's exception EXC-2026-004.",
+    '',
     '| From | To | Port | Purpose | Declared in |',
     '|---|---|---|---|---|',
     ...[...new Set(rows)],
