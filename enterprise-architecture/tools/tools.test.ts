@@ -20,6 +20,7 @@ import { verifyInfrastructure } from '../../infrastructure/tools/verify.ts';
 import { scanSecrets } from './scan-secrets.ts';
 import { validateManifest } from './validate-manifest.ts';
 import { checkApprovedArchitecture, checkPinnedVersions, runPipeline } from './pipeline.ts';
+import { releaseCheck } from './release-check.ts';
 import { EXPECTED, verifyRunner } from './verify-runner.ts';
 import { judgeGateChanges } from './verify-gate-inputs.ts';
 import { applyExceptions, exceptionProblems, ruleIds } from './lib/exceptions.ts';
@@ -378,6 +379,39 @@ test('only an approved, unchanged architecture can judge a candidate (AGT-04)', 
   assert.deepEqual(status(), ['skip']);
 });
 
+test('a template\'s pins follow the other releases; nothing else in a platform does (AGT-04)', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'release-'));
+  const git = (...args: string[]) => spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
+  const write = (file: string, text: string) => { mkdirSync(join(dir, file, '..'), { recursive: true }); writeFileSync(join(dir, file), text); };
+  git('init', '-q'); git('config', 'user.email', 'test@natax.example'); git('config', 'user.name', 'Test');
+  write('platforms/web/VERSION', '1.0.0\n');
+  write('platforms/web/standards.md', '### WEB-01: Rule\n');
+  write('platforms/web/template/architecture.yaml', 'application: my-app\narchitecture:\n  enterprise-architecture: 1.0.0\n');
+  write('enterprise-architecture/governance/versions.yaml', 'architectures:\n  web:\n    - version: 1.0.0\n      status: active\n');
+  git('add', '-A'); git('commit', '-qm', 'v1'); git('tag', 'web/v1.0.0');
+  const approved = () => checkApprovedArchitecture(['web'], dir).map((r) => r.status);
+  const release = () => releaseCheck(dir).map((r) => r.status);
+  assert.deepEqual([approved(), release()], [['pass'], ['pass']]);
+  // A new version of another architecture, pinned in the template: still web 1.0.0.
+  write('platforms/web/template/architecture.yaml', 'application: my-app\narchitecture:\n  enterprise-architecture: 2.0.0\n');
+  git('commit', '-qam', 'pins'); assert.deepEqual([approved(), release()], [['pass'], ['pass']]);
+  // Anything else in the template's manifest is a change to the platform.
+  write('platforms/web/template/architecture.yaml', 'application: my-app\nexposure: internet\narchitecture:\n  enterprise-architecture: 2.0.0\n');
+  git('commit', '-qam', 'exposure'); assert.deepEqual([approved(), release()], [['skip'], ['fail']]);
+  // A new version, registered: the release check passes, and AGT-04 waits for its tag.
+  write('platforms/web/VERSION', '1.1.0\n');
+  assert.deepEqual([approved(), release()], [['skip'], ['fail']], 'not in versions.yaml yet');
+  write('enterprise-architecture/governance/versions.yaml', 'architectures:\n  web:\n    - version: 1.0.0\n      status: superseded\n    - version: 1.1.0\n      status: active\n');
+  assert.deepEqual(release(), ['pass']);
+  git('commit', '-qam', 'v1.1'); git('tag', 'web/v1.1.0');
+  assert.deepEqual([approved(), release()], [['pass'], ['pass']]);
+});
+
+test('every architecture here is exactly its tag, or a new version (AGT-04)', () => {
+  const problems = releaseCheck().filter((r) => r.status === 'fail').map((r) => r.message);
+  assert.deepEqual(problems, [], 'Release the change as a new version, or revert it.');
+});
+
 test('a test command that runs no tests fails, and the freeze uses production\'s class (DEL-02, DEL-05)', () => {
   // The registered fixture is class B in production; declaring class C mustn't escape the freeze.
   const dir = mkdtempSync(join(tmpdir(), 'freeze-'));
@@ -464,7 +498,7 @@ test('an older minor version passes as the active one; a deprecated major warns 
   const m = clone(loadManifest(APP));
   m.architecture = { 'enterprise-architecture': '4.0.0', 'typescript-web': '1.0.0', network: '1.0.0', infrastructure: '2.0.0' };
   const own04 = validateManifest(APP, m).filter((r) => r.rule === 'OWN-04');
-  assert.ok(own04.some((r) => r.status === 'pass' && /typescript-web 1\.0\.0 is superseded by 1\.2\.0/.test(r.message)));
+  assert.ok(own04.some((r) => r.status === 'pass' && /typescript-web 1\.0\.0 is superseded by 1\.3\.0/.test(r.message)));
   m.architecture['enterprise-architecture'] = '1.0.0';
   assert.ok(validateManifest(APP, m).some((r) => r.rule === 'OWN-04' && r.status === 'warn' && /2027-06-01/.test(r.message)));
 });

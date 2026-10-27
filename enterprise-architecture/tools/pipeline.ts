@@ -21,6 +21,7 @@ import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } fr
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
+import { parse } from 'yaml';
 import { verifyInfrastructure } from '../../infrastructure/tools/verify.ts';
 import { verifyNetwork } from '../../network/tools/verify.ts';
 import { checkDependencies } from './check-dependencies.ts';
@@ -212,13 +213,46 @@ export function runPipeline(appDir: string, options: { candidateDir?: string | u
   return { sections, status };
 }
 
-/** Where each architecture lives, and what in it is data the pipeline maintains rather than approved text. */
-const ARCHITECTURE_PATHS: Record<string, { dir: string; data: string[] }> = {
-  'enterprise-architecture': { dir: 'enterprise-architecture', data: ['enterprise-architecture/landscape', 'enterprise-architecture/governance/exceptions.yaml', 'enterprise-architecture/governance/versions.yaml', 'enterprise-architecture/governance/secret-scan-allowlist.yaml', 'enterprise-architecture/governance/proposals'] },
+/**
+ * Where each architecture lives, what in it is data the pipeline maintains rather than approved
+ * text, and its template's manifest, if it has one.
+ */
+const ARCHITECTURE_PATHS: Record<string, { dir: string; data: string[]; template?: string }> = {
+  'enterprise-architecture': { dir: 'enterprise-architecture', template: 'enterprise-architecture/templates/architecture.yaml', data: ['enterprise-architecture/landscape', 'enterprise-architecture/governance/exceptions.yaml', 'enterprise-architecture/governance/versions.yaml', 'enterprise-architecture/governance/secret-scan-allowlist.yaml', 'enterprise-architecture/governance/proposals'] },
   network: { dir: 'network', data: ['network/generated', 'network/observed'] },
   infrastructure: { dir: 'infrastructure', data: ['infrastructure/generated'] },
 };
-const pathsOf = (name: string) => ARCHITECTURE_PATHS[name] ?? { dir: join('platforms', name).replace(/\\/g, '/'), data: [] };
+const pathsOf = (name: string) => ARCHITECTURE_PATHS[name] ?? { dir: `platforms/${name}`, data: [], template: `platforms/${name}/template/architecture.yaml` };
+/** Every architecture in a checkout: the central ones, and each platform with a VERSION file. */
+export const architectureNames = (root = REPO_ROOT): string[] => [
+  ...Object.keys(ARCHITECTURE_PATHS),
+  ...(existsSync(join(root, 'platforms')) ? readdirSync(join(root, 'platforms')).filter((p) => existsSync(join(root, 'platforms', p, 'VERSION'))) : []),
+].filter((name) => checkoutVersion(name, root));
+
+/**
+ * The files of an architecture that differ from a tag, committed or not. A template's pins don't
+ * count: they follow the other architectures' releases, and nothing is judged against a template.
+ * Every other change to a template's manifest does.
+ */
+export function changedSince(name: string, tag: string, root = REPO_ROOT): string[] {
+  const git = (...args: string[]) => spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+  const { dir, data, template: pins } = pathsOf(name);
+  const scope = ['--', dir, ...data.map((d) => `:(exclude)${d}`)];
+  const changed = git('diff', '--name-only', tag, ...scope).stdout.split('\n');
+  const uncommitted = git('status', '--porcelain', '--untracked-files=all', ...scope).stdout.split('\n').map((l) => l.slice(3));
+  const withoutPins = (text: string | undefined) => {
+    if (text === undefined) return undefined;
+    const { architecture: _, ...rest } = (parse(text) ?? {}) as Record<string, unknown>;
+    return JSON.stringify(rest);
+  };
+  const onlyPins = () => {
+    if (!pins) return false;
+    const before = git('show', `${tag}:${pins}`);
+    const now = existsSync(join(root, pins)) ? readFileSync(join(root, pins), 'utf8') : undefined;
+    return before.status === 0 && now !== undefined && withoutPins(before.stdout) === withoutPins(now);
+  };
+  return [...new Set([...changed, ...uncommitted].filter(Boolean))].filter((f) => f !== pins || !onlyPins());
+}
 
 /**
  * AGT-04 and OWN-04: the candidate is judged against exactly an approved version of each
@@ -231,23 +265,17 @@ export function checkApprovedArchitecture(names: string[], root = REPO_ROOT): Re
   const head = git('rev-parse', '--short', 'HEAD');
   if (head.status !== 0) return [skip('AGT-04', 'The architecture is not a Git checkout, so no approved version can be shown. Judge it against a checkout of the version tags.')];
   return names.map((name) => {
-    const { dir, data } = pathsOf(name);
     const version = checkoutVersion(name, root);
     const tag = `${name}/v${version}`;
     if (!version || git('rev-parse', '-q', '--verify', `refs/tags/${tag}`).status !== 0) return skip('AGT-04', `${name} ${version ?? '?'} has no tag ${tag}: it isn't an approved version.`);
-    const scope = ['--', dir, ...data.map((d) => `:(exclude)${d}`)];
-    const changed = git('diff', '--name-only', tag, ...scope).stdout.trim();
-    const uncommitted = git('status', '--porcelain', '--untracked-files=all', ...scope).stdout.trim();
-    if (changed || uncommitted) {
-      const files = [...changed.split('\n'), ...uncommitted.split('\n').map((l) => l.slice(3))].filter(Boolean);
-      return skip('AGT-04', `${name} differs from its approved version ${tag} (${files.slice(0, 5).join(', ')}${files.length > 5 ? ', ...' : ''}): not what the Board approved, so nothing judged against it can pass.`);
-    }
+    const files = changedSince(name, tag, root);
+    if (files.length) return skip('AGT-04', `${name} differs from its approved version ${tag} (${files.slice(0, 5).join(', ')}${files.length > 5 ? ', ...' : ''}): not what the Board approved, so nothing judged against it can pass.`);
     return pass('AGT-04', `Judged against ${name} ${version}, exactly as tagged ${tag} (commit ${head.stdout.trim()}).`);
   });
 }
 
 /** The version of each architecture in this checkout, from its VERSION file. */
-function checkoutVersion(name: string, root = REPO_ROOT): string | undefined {
+export function checkoutVersion(name: string, root = REPO_ROOT): string | undefined {
   const dir = ['enterprise-architecture', 'network', 'infrastructure'].includes(name) ? name : join('platforms', name);
   const file = join(root, dir, 'VERSION');
   return existsSync(file) ? readFileSync(file, 'utf8').trim() : undefined;

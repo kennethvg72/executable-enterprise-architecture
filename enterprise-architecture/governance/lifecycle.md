@@ -8,6 +8,8 @@ The central architecture, the network and infrastructure architectures, and each
 
 Each version is a Git tag on this repository, for example `enterprise-architecture/v1.0.0` or `typescript-web/v1.2.0`. The status of every version is in [versions.yaml](versions.yaml).
 
+Every change to an architecture's files is a new version of that architecture: the pipeline judges a candidate only against an architecture exactly as its tag points to ([AGT-04](../principles/ai-agents.md#agt-04-agents-read-the-architecture-they-dont-edit-it)). Two things in an architecture's folder aren't its text: the data the pipeline maintains (the landscape, exceptions, this file), and the version pins in a template's manifest, which follow the other architectures' releases. Before tagging, the Board runs `npm run release-check` (`npm test` runs it too): every architecture must be exactly its tag, or a new version, registered here.
+
 ## Statuses
 
 ```
