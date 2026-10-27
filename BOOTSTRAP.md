@@ -48,7 +48,7 @@ From now on, `ARCHITECTURE` means the path of this repository. Treat it as read-
 
 ## 4. The other agents, and the sandbox
 
-**A second model.** The Test Agent and the Local Governance Agent should run on a different model family from yours ([AGT-03](enterprise-architecture/principles/ai-agents.md#agt-03-use-different-models-for-independence)). If you are Claude, check `codex --version` and `codex login status`. If you are Codex, check that `claude -p "reply with ok"` answers. If the other tool is missing, offer to install it; signing in is something the person does themselves. If they'd rather not, separate sessions of your own model will do, and you record the reduced independence.
+**A second model.** The Test Agent and the Local Governance Agent should run on a different model family from yours ([AGT-03](enterprise-architecture/principles/ai-agents.md#agt-03-independence-comes-from-separate-contexts)). If you are Claude, check `codex --version` and `codex login status`. If you are Codex, check that `claude -p "reply with ok"` answers. If the other tool is missing, offer to install it; signing in is something the person does themselves. If they'd rather not, separate sessions of your own model will do, and you record the reduced independence.
 
 **The sandbox** ([SEC-11](enterprise-architecture/principles/security.md#sec-11-contain-the-tools-including-the-ai-ones)). Agents run commands sandboxed, with write access limited to the workspace (Claude Code: `/sandbox`; Codex: `--sandbox workspace-write`). On Linux and WSL, Claude Code's sandbox needs `bubblewrap` and `socat`; install them if missing (asking first). Verify it: from inside the agent, try to write outside the workspace. This works in any shell:
 

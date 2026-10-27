@@ -87,7 +87,7 @@ The lane is for when the provider is down, not when its answer is inconvenient.
 
 ## Running the pipeline here
 
-The Governance Agent runs once per release candidate, as a command, never as a conversation: whoever wants the release never talks to the judge ([AGT-01](../principles/ai-agents.md#agt-01-separate-agents-for-separate-duties)). Pin a model from a different family than the one that built the application ([AGT-03](../principles/ai-agents.md#agt-03-use-different-models-for-independence)), after it has passed the regression set twice in a row ([AGT-11](../principles/ai-agents.md#agt-11-the-ai-providers-are-governed-like-any-other-dependency)). The providers the tools can ask are `openai-codex` (the Codex CLI) and `anthropic-claude` (the Claude Code CLI), both without a conversation, reading only:
+The Governance Agent runs once per release candidate, as a command, never as a conversation: whoever wants the release never talks to the judge ([AGT-01](../principles/ai-agents.md#agt-01-separate-agents-for-separate-duties)). Pin a model from a different family than the one that built the application ([AGT-03](../principles/ai-agents.md#agt-03-independence-comes-from-separate-contexts)), after it has passed the regression set twice in a row ([AGT-11](../principles/ai-agents.md#agt-11-the-ai-providers-are-governed-like-any-other-dependency)). The providers the tools can ask are `openai-codex` (the Codex CLI) and `anthropic-claude` (the Claude Code CLI), both without a conversation, reading only:
 
 ```sh
 node enterprise-architecture/tools/regression.ts <provider> <model>      # twice; each writes pipeline/regression/results/...

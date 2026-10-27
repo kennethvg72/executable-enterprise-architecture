@@ -43,8 +43,11 @@ const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** One question to a model, and everything needed to show later what was asked and answered. */
 export interface Answer { text: string; transcript: string; tool: string }
-/** `readable`: directories outside cwd the model may read (the architecture), never write. */
-export type Ask = (prompt: string, cwd: string, readable?: string[]) => Promise<Answer>;
+/**
+ * `readable`: directories outside cwd the model may read (the architecture), never write.
+ * `write`: it may also change files in cwd, and only there (start-agent.ts checks the result).
+ */
+export type Ask = (prompt: string, cwd: string, readable?: string[], options?: { write?: boolean }) => Promise<Answer>;
 
 /** Run a command with input, without a shell, and collect its output. */
 export function run(cmd: string, args: string[], input: string, timeoutMs: number, cwd?: string): Promise<{ code: number | null; stdout: string; stderr: string }> {
@@ -79,18 +82,19 @@ function claudeExecutable(): string {
 }
 
 /**
- * OpenAI's models through the Codex CLI, sandboxed read-only, without the user's own configuration,
+ * OpenAI's models through the Codex CLI, sandboxed read-only (or to its workspace, when it may
+ * write), without the user's own configuration,
  * rules or hooks: the gate is the same whoever's machine it runs on.
  */
 function codex(model: string): Ask {
-  return async (prompt, cwd) => {
+  return async (prompt, cwd, _readable, options = {}) => {
     const exe = codexExecutable();
     const out = join(mkdtempSync(join(tmpdir(), 'answer-')), 'answer.md');
     // On Windows, the sandbox has to be named: without the user's configuration, the default one
     // blocks the commands the model reads files with, and a model that can't read rejects blind.
     const windows = process.platform === 'win32' ? ['-c', 'windows.sandbox="elevated"'] : [];
     const r = await run(exe, ['exec', '--skip-git-repo-check', '--ephemeral', '--ignore-user-config', '--ignore-rules', ...windows,
-      '-s', 'read-only', '-m', model, '-C', cwd, '--json', '-o', out, '-'], prompt, 30 * 60 * 1000);
+      '-s', options.write ? 'workspace-write' : 'read-only', '-m', model, '-C', cwd, '--json', '-o', out, '-'], prompt, 30 * 60 * 1000);
     const tool = spawnSync(exe, ['--version'], { encoding: 'utf8' }).stdout?.trim() || 'codex';
     if (r.code !== 0 || !existsSync(out)) throw new Error(`${tool} failed (exit ${r.code}): ${r.stderr.trim().split('\n').slice(-3).join(' ')}`);
     return { text: readFileSync(out, 'utf8'), transcript: r.stdout, tool };
@@ -99,12 +103,14 @@ function codex(model: string): Ask {
 
 /**
  * Anthropic's models through the Claude Code CLI, without a conversation: only the tools that read
- * (Read, Grep, Glob), none of the user's settings, MCP servers or saved sessions.
+ * (Read, Grep, Glob), and Edit and Write when it may write; never a shell; none of the user's
+ * settings, MCP servers or saved sessions.
  */
 function claude(model: string): Ask {
-  return async (prompt, cwd, readable = []) => {
+  return async (prompt, cwd, readable = [], options = {}) => {
     const exe = claudeExecutable();
-    const r = await run(exe, ['-p', '--model', model, '--tools', 'Read,Grep,Glob', '--permission-mode', 'dontAsk',
+    const tools = options.write ? ['--tools', 'Read,Grep,Glob,Edit,Write', '--permission-mode', 'acceptEdits'] : ['--tools', 'Read,Grep,Glob', '--permission-mode', 'dontAsk'];
+    const r = await run(exe, ['-p', '--model', model, ...tools,
       '--setting-sources', '', '--strict-mcp-config', '--no-session-persistence', '--output-format', 'json',
       ...readable.flatMap((d) => ['--add-dir', d])], prompt, 30 * 60 * 1000, cwd);
     const version = spawnSync(exe, ['--version'], { encoding: 'utf8' }).stdout?.trim() || 'claude';

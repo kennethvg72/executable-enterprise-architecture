@@ -8,7 +8,33 @@ governance-agent:
   regression:                       # two passing results for exactly this provider and model, from tools/regression.ts
     - <path of the first run's result>
     - <path of the second run's result>
+# The agents the Governance Agent starts, each in a context of its own (AGT-03), with
+# start-agent.ts: their instructions, and the shared systems whose source they may write (OWN-10).
+# Everything else they get is a copy, to read. The deployment is not here: it is the pipeline's
+# own deployment process, and the Governance Agent never starts it (AGT-05).
 security-agent:
   provider: <a different provider from the Governance Agent's (AGT-03)>
   model: <exact model version>
+  instructions: enterprise-architecture/agents/security-agent.md
+  writes: []                        # its findings are its answer
+network-agent:
+  provider: <the provider Central IT's network specialists accept>
+  model: <exact model version>
+  instructions: [enterprise-architecture/agents/steward-agent.md, network/agents/README.md]   # the steward's, and its additions
+  writes: [network]
+platform-steward:
+  provider: <provider>
+  model: <exact model version>
+  instructions: enterprise-architecture/agents/steward-agent.md
+  writes: [load-balancers, dns, secret-store, file-storage, observability, mail-addresses]
+db-steward:
+  provider: <provider>
+  model: <exact model version>
+  instructions: enterprise-architecture/agents/steward-agent.md
+  writes: [databases]
+power-platform-steward:
+  provider: <provider>
+  model: <exact model version>
+  instructions: enterprise-architecture/agents/steward-agent.md
+  writes: [power-platform]
 regression-set: enterprise-architecture/pipeline/regression/   # past candidates with known verdicts

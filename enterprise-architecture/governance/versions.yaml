@@ -67,9 +67,13 @@ architectures:
       activated: 2026-10-27
       proposal: enterprise-architecture/governance/proposals/2026-012-a-change-is-a-version.md
     - version: 5.0.0
-      status: active
+      status: superseded            # by 5.1.0, a minor version: applications pinning it pass as if they pinned 5.1.0
       activated: 2026-10-27
       proposal: enterprise-architecture/governance/proposals/2026-013-deployments-and-shared-systems.md
+    - version: 5.1.0
+      status: active
+      activated: 2026-10-27
+      proposal: enterprise-architecture/governance/proposals/2026-014-the-governance-agent-starts-the-others.md
 
   typescript-web:
     - version: 1.0.0
@@ -131,9 +135,13 @@ architectures:
       decommission-date: 2027-06-01
       activated: 2026-10-14
     - version: 2.0.0
-      status: active
+      status: superseded            # by 2.1.0
       activated: 2026-10-27
       proposal: enterprise-architecture/governance/proposals/2026-013-deployments-and-shared-systems.md
+    - version: 2.1.0
+      status: active
+      activated: 2026-10-27
+      proposal: enterprise-architecture/governance/proposals/2026-014-the-governance-agent-starts-the-others.md
 
   infrastructure:
     - version: 1.0.0

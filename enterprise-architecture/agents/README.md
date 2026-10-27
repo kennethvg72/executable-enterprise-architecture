@@ -69,13 +69,15 @@ Platform, network and infrastructure architectures add to these role definitions
 
 ## Running agents
 
-Any capable coding agent can fill any role: Claude Code, Codex and others. Roles are defined in plain Markdown ([AGT-08](../principles/ai-agents.md#agt-08-instructions-are-plain-markdown-not-tied-to-one-vendor)). Each technology's bootstrap procedure sets up the roles for the tools available, preferring a different model family for the Test Agent than for the Development Agent ([AGT-03](../principles/ai-agents.md#agt-03-use-different-models-for-independence)).
+Any capable coding agent can fill any role: Claude Code, Codex and others. Roles are defined in plain Markdown ([AGT-08](../principles/ai-agents.md#agt-08-instructions-are-plain-markdown-not-tied-to-one-vendor)). Each technology's bootstrap procedure sets up the roles for the tools available, preferring a different model family for the Test Agent than for the Development Agent ([AGT-03](../principles/ai-agents.md#agt-03-independence-comes-from-separate-contexts)).
 
-The simplest way to run a role is to start a separate, non-interactive session of a coding agent with the role file as its instructions. For example:
+The simplest way to run a local role is to start a separate, non-interactive session of a coding agent, or a subagent, with the role file as its instructions. For example:
 
 ```sh
 codex exec --sandbox workspace-write "Act as the Test Agent defined in <path>/test-agent.md. Task: ..."
 claude -p "Act as the Test Agent defined in <path>/test-agent.md. Task: ..."
 ```
 
-Separate sessions keep the roles independent: the Test Agent doesn't share the Development Agent's conversation, only the repository.
+Separate contexts keep the roles independent: the Test Agent doesn't share the Development Agent's conversation, only the repository ([AGT-03](../principles/ai-agents.md#agt-03-independence-comes-from-separate-contexts)).
+
+Centrally, the Governance Agent starts the other central agents itself, the Security Agent and the stewards, each in a context of its own, for one question, on its own pinned model, with [start-agent.ts](../tools/start-agent.ts). It never starts the deployment: that is the pipeline's own deployment process ([AGT-05](../principles/ai-agents.md#agt-05-agents-have-no-production-rights)).
