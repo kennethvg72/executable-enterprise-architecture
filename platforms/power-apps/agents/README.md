@@ -16,6 +16,7 @@ These add to the [central role definitions](../../../enterprise-architecture/age
 - Calls every elevated flow directly, as a user without the privilege and with someone else's record ID ([PA-07](../standards.md#pa-07-flows-dont-lend-out-privileges)).
 - Generates synthetic data **above the delegation limit**, and checks that searches, filters and counts are still right.
 - Writes Playwright tests for each requirement, and checks every audited action leaves an audit record ([PA-15](../standards.md#pa-15-audit-and-retention-live-with-the-data)).
+- Records the evidence [platform.yaml](../platform.yaml) names, with `record-evidence.ts`, on the committed code: `solution-check` and `test-results`. Their output isn't counted, so the audit checks the command, the commit and the exit code ([DEL-02](../../../enterprise-architecture/principles/delivery.md#del-02-tests-are-part-of-the-change)).
 
 ## Local Governance Agent
 
@@ -23,11 +24,9 @@ Before "Go": is this really a Power App (limits in [platform.yaml](../platform.y
 
 ## Security Agent
 
-The attack playbook for this platform, written by NATAX's security specialists. It adds to the [central Security Agent role](../../../enterprise-architecture/agents/security-agent.md).
+The review playbook for this platform, written by NATAX's security specialists. It adds to the [central Security Agent role](../../../enterprise-architecture/agents/security-agent.md). You read the solution's source and the Test Agent's tests; you run nothing. An attack without its test is a finding.
 
-- **Go around the app.** As each role's test user, open the SharePoint list or Dataverse table directly: in the browser, exported to Excel, through the Graph API and the Dataverse Web API. Read every column the app hides, and try every change the app doesn't offer ([PA-02](../standards.md#pa-02-security-is-enforced-at-the-data-source-never-in-the-app)).
-- **Borrow a flow's privileges.** Trigger every flow directly, without the app: as a user without the privilege, with someone else's record, with values the app would never send ([PA-07](../standards.md#pa-07-flows-dont-lend-out-privileges)). Read the run history as a co-owner: secure inputs and outputs must hide what they should.
-- **Through the custom connectors.** With a test user's token, call the NATAX APIs the custom connector uses, and APIs it doesn't. Only the declared ones may answer, and only with that user's permissions ([PA-09](../standards.md#pa-09-natax-systems-only-through-their-apis-as-the-signed-in-user)).
-- **Who can open it.** Check that the app, its flows and its data are shared with security groups only, and not with individuals, guests or the whole organization ([PA-10](../standards.md#pa-10-staff-only-shared-with-groups)).
-
-In landscape sweeps, read the tenant: apps shared with everyone, personal connections in test or production, flows whose owner has left, Power Pages sites, and DLP policies that differ from [approved-connectors.yaml](../approved-connectors.yaml) ([PA-08](../standards.md#pa-08-dlp-policies-are-a-boundary-not-an-authorization)). Findings from one app's data source are tried on every app using the same pattern.
+- **Around the app.** The SharePoint list or Dataverse table's own permissions, against every role: what each role could read and change directly, in the browser, exported to Excel, through the Graph API and the Dataverse Web API, including the columns the app hides ([PA-02](../standards.md#pa-02-security-is-enforced-at-the-data-source-never-in-the-app)).
+- **A flow's privileges.** Every flow's trigger, who may call it and whose permissions it runs with: what a user without the privilege, with someone else's record or with values the app would never send could make it do ([PA-07](../standards.md#pa-07-flows-dont-lend-out-privileges)). Secure inputs and outputs hide what they should from the run history.
+- **Through the custom connectors.** The NATAX APIs each custom connector declares, and whether it could reach others. Only the declared ones may answer, and only with the signed-in user's permissions ([PA-09](../standards.md#pa-09-natax-systems-only-through-their-apis-as-the-signed-in-user)).
+- **Who can open it.** The app, its flows and its data are shared with security groups only, and not with individuals, guests or the whole organization ([PA-10](../standards.md#pa-10-staff-only-shared-with-groups)).

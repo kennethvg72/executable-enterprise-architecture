@@ -1,7 +1,7 @@
 // The deterministic stage of the central pipeline (pipeline/README.md, stage 3), for one
 // application. The Governance Agent runs this and includes the output in its verdict.
 //
-// Usage: npm run pipeline -- <application repository> [--candidate releases/<id>] [--today YYYY-MM-DD] [--isolated]
+// Usage: npm run pipeline -- <application repository> [--candidate releases/<id>] [--today YYYY-MM-DD]
 //
 // Three results, because a check that didn't run proves nothing:
 //   PASS        every mandatory check ran and passed                    exit 0
@@ -9,19 +9,16 @@
 //   INCOMPLETE  nothing failed, but a mandatory check couldn't run      exit 3
 // Only PASS lets the stage pass. A check that can't run is reported as SKIPPED, never as passed.
 //
-// The platform's checks run the candidate's own code: its tests, its build scripts, and tools
-// installed from its lockfile. That code is untrusted (SEC-13). It runs only with --isolated,
-// which states that this process is inside a disposable runner whose isolation the hostile
-// canary has verified (verify-runner.ts). --isolated doesn't create isolation; it only says
-// it exists. Without it, those checks are skipped and the stage is INCOMPLETE.
+// Nothing here runs the candidate's code (SEC-13): every check reads files. The candidate's tests
+// ran in the Problem Owner's environment; their results are audited here (audit-results.ts).
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { parse } from 'yaml';
+import { auditResults } from './audit-results.ts';
 import { verifyInfrastructure } from '../../infrastructure/tools/verify.ts';
 import { verifyNetwork } from '../../network/tools/verify.ts';
 import { checkDeployment, checkGovernanceFiles } from './check-deployment.ts';
@@ -35,7 +32,6 @@ import { applyExceptions, exceptionsFor } from './lib/exceptions.ts';
 import { fail, failed, format, pass, skip, warn, type Result } from './lib/report.ts';
 import { scanSecrets } from './scan-secrets.ts';
 import { validateManifest } from './validate-manifest.ts';
-import { verifyRunner } from './verify-runner.ts';
 import { GATE_INPUTS, judgeGateChanges } from './verify-gate-inputs.ts';
 
 interface Candidate { id: string; application: string; purpose: string }
@@ -71,12 +67,6 @@ export function checkFreeze(today: Date, resilienceClass: string, purpose: strin
 export type Status = 'PASS' | 'FAIL' | 'INCOMPLETE';
 export const EXIT_CODE: Record<Status, number> = { PASS: 0, FAIL: 1, INCOMPLETE: 3 };
 
-/** What candidate code may see of the environment: enough to run, no credentials (SEC-13). */
-function candidateEnv(): NodeJS.ProcessEnv {
-  const keep = ['PATH', 'Path', 'PATHEXT', 'SystemRoot', 'ComSpec', 'TEMP', 'TMP', 'HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'TEST_DATABASE_URL', 'NODE_ENV'];
-  return Object.fromEntries(keep.filter((k) => process.env[k] !== undefined).map((k) => [k, process.env[k]]));
-}
-
 /**
  * A digest of every file in the architecture repository, tracked or not, to detect tampering.
  * Not just what Git tracks: a planted file that nothing tracks can still be read.
@@ -100,14 +90,7 @@ export function diffDigests(before: Map<string, string>, after: Map<string, stri
   return [...new Set([...before.keys(), ...after.keys()])].filter((f) => before.get(f) !== after.get(f));
 }
 
-function run(command: string, args: string[], cwd: string): { ok: boolean; output: string } {
-  // npm and npx are scripts on Windows, which need a shell. The commands are constants from the
-  // platform's platform.yaml; what they execute is the candidate's code, hence --isolated.
-  const r = spawnSync([command, ...args].join(' '), { cwd, encoding: 'utf8', shell: true, timeout: 600_000, env: candidateEnv() });
-  return { ok: r.status === 0, output: `${r.stdout ?? ''}${r.stderr ?? ''}` };
-}
-
-export function runPipeline(appDir: string, options: { candidateDir?: string | undefined; today?: Date; isolated?: boolean; preflight?: () => Result[] } = {}): { sections: [string, Result[]][]; status: Status } {
+export function runPipeline(appDir: string, options: { candidateDir?: string | undefined; today?: Date } = {}): { sections: [string, Result[]][]; status: Status } {
   const manifest = loadManifest(appDir);
   const sections: [string, Result[]][] = [];
   const candidate = options.candidateDir && existsSync(join(options.candidateDir, 'candidate.yaml'))
@@ -160,69 +143,8 @@ export function runPipeline(appDir: string, options: { candidateDir?: string | u
   sections.push(['Shared systems (accepted exceptions)', sharedSystemExceptions(options.today ?? new Date())]);
   sections.push(['Documentation links', checkLinks()]);
 
-  // Everything above is judged from the architecture. Only now does the candidate's own code run:
-  // last, in a copy of its repository, with none of the pipeline's environment, and with the
-  // architecture checked afterwards for tampering. Its results are its claims (SEC-13).
-  const app: Result[] = [];
-  // An optional check that can't run is a warning; a mandatory one makes the stage incomplete.
-  const notRun = (c: { rule: string; optional?: boolean }, message: string) =>
-    app.push(c.optional ? warn(c.rule, `Optional, not run: ${message}`) : skip(c.rule, message));
-  if (!options.isolated) {
-    for (const c of platform?.checks ?? []) notRun({ ...c, rule: 'SEC-13' }, `${c.name}: runs the candidate's own code, so only in a disposable runner (--isolated).`);
-  } else {
-    // --isolated is an assertion. Check it: the hostile canary runs here first, with the same
-    // environment the candidate gets, and finds what an earlier run left behind. Any escape, and
-    // the candidate's code doesn't run at all.
-    const preflight = (options.preflight ?? (() => verifyRunner({ phase: 'preflight', env: candidateEnv() })))();
-    const escaped = preflight.filter((r) => r.status === 'fail');
-    if (escaped.length) {
-      app.push(fail('SEC-13', `This runner isn't isolated, so the candidate's code didn't run: ${escaped.map((r) => r.message).join(' ')}`, 'Run candidates only in a disposable runner that the hostile canary verifies (verify-runner.ts).'));
-      sections.push([`Application (${manifest.runtime.technology})`, app]);
-      return { sections, status: 'FAIL' };
-    }
-    app.push(pass('SEC-13', `The hostile canary found no way out of this runner, and nothing left by an earlier run (${preflight.length} attempts).`));
-    const before = architectureDigest();
-    const workspace = mkdtempSync(join(tmpdir(), 'candidate-'));
-    try {
-      cpSync(appDir, workspace, { recursive: true, filter: (src) => !/[\\/](node_modules|\.git)([\\/]|$)/.test(src.slice(appDir.length)) });
-      let installed = true;
-      if (platform?.install) {
-        const r = run(platform.install, [], workspace);
-        installed = r.ok;
-        app.push(r.ok
-          ? pass('SEC-13', `Dependencies installed by the pipeline, from the lockfile: ${platform.install}.`)
-          : fail('SEC-13', `Installing dependencies failed (${platform.install}):\n${r.output.trim().slice(-2000)}`));
-      }
-      for (const c of installed ? platform?.checks ?? [] : []) {
-        const available = c.needs === 'node_modules' ? existsSync(join(workspace, 'node_modules'))
-          : c.needs === 'gradlew' ? existsSync(join(workspace, 'gradlew'))
-          : run(`${c.needs} --version`, [], workspace).ok;
-        if (!available) { notRun(c, `${c.name}: needs ${c.needs}, which isn't available here.`); continue; }
-        if (c.database && !process.env.TEST_DATABASE_URL && !existsSync(join(workspace, '.env'))) {
-          notRun(c, `${c.name}: no test database configured (TEST_DATABASE_URL).`);
-          continue;
-        }
-        const r = run(c.run, [], workspace);
-        // The exit code decides. The counts come from the candidate's own output: its claims.
-        const summary = r.output.split('\n').filter((l) => /^ℹ (tests|pass|fail|skipped) /.test(l)).map((l) => l.slice(2)).join(', ');
-        const claimed = summary ? ` (the candidate reports: ${summary})` : '';
-        app.push(r.ok
-          ? pass(c.rule, `${c.name} exited successfully${claimed}.`)
-          : fail(c.rule, `${c.name} failed${claimed || `:\n${r.output.trim().slice(-2000)}`}.`));
-        const ran = Number(/tests (\d+)/.exec(summary)?.[1] ?? '0');
-        if (r.ok && c.counts === 'node-test' && ran === 0) app.push(fail(c.rule, `${c.name} exited successfully, but no tests ran. A test command that runs nothing proves nothing.`));
-        const skipped = Number(/skipped (\d+)/.exec(summary)?.[1] ?? '0');
-        if (skipped) app.push(fail(c.rule, `${skipped} tests were skipped. Tests must not skip silently.`));
-      }
-    } finally {
-      rmSync(workspace, { recursive: true, force: true });
-    }
-    const changed = diffDigests(before, architectureDigest());
-    app.push(changed.length
-      ? fail('SEC-13', `The architecture changed while the candidate's code ran: ${changed.slice(0, 10).join(', ')}. Every result of this run is void.`, 'Restore the architecture from its repository, and run the candidate again in a runner where the architecture is read-only.')
-      : pass('SEC-13', "The architecture was unchanged after the candidate's code ran."));
-  }
-  sections.push([`Application (${manifest.runtime.technology})`, app]);
+  // The Test Agent's results, audited: the pipeline runs none of the candidate's code (SEC-13).
+  sections.push([`Test results (DEL-02, ${manifest.runtime.technology})`, auditResults(appDir, platform, options.candidateDir)]);
 
   // Board exceptions: validated, then applied to exactly their rules for this application. An
   // invalid exception covers nothing, and is itself a failure.
@@ -330,7 +252,7 @@ export function checkPinnedVersions(pins: Record<string, string>): Result[] {
 }
 
 if (import.meta.main) {
-  const { values, positionals } = parseArgs({ allowPositionals: true, options: { candidate: { type: 'string' }, today: { type: 'string' }, isolated: { type: 'boolean', default: false }, verbose: { type: 'boolean', default: false } } });
+  const { values, positionals } = parseArgs({ allowPositionals: true, options: { candidate: { type: 'string' }, today: { type: 'string' }, verbose: { type: 'boolean', default: false } } });
   const appDir = resolve(positionals[0] ?? '.');
   const candidateDir = values.candidate ? resolve(appDir, values.candidate) : undefined;
   const today = values.today ? new Date(`${values.today}T12:00:00Z`) : undefined;
@@ -338,7 +260,7 @@ if (import.meta.main) {
     console.error(`--today must be a date (YYYY-MM-DD), not "${values.today}".`);
     process.exit(2);
   }
-  const { sections, status } = runPipeline(appDir, { candidateDir, isolated: values.isolated, ...(today ? { today } : {}) });
+  const { sections, status } = runPipeline(appDir, { candidateDir, ...(today ? { today } : {}) });
   console.log(`# Deterministic stage: ${appDir.replace(REPO_ROOT, '').replace(/^[\\/]/, '')}\n`);
   for (const [title, results] of sections) console.log(format(title, results, { verbose: values.verbose }));
   const all = sections.flatMap(([, r]) => r);
@@ -351,7 +273,7 @@ if (import.meta.main) {
     'signed Release and review evidence (AGT-01, AGT-06); registry provenance and vulnerability scan (SEC-05);',
     'security finding age (SEC-08); backup restore and site exercise records (DAT-08, RES-09); load test (RES-10);',
     'workload identity and mTLS (IAM-05); contract tests against real providers (INT-03, INT-06);',
-    "test and acceptance deployment, probes, the Security Agent's attack (SEC-12), failure tests and rollback rehearsal (stages 5 and 6).",
+    "the Security Agent's review (SEC-12).",
     'The Governance Agent judges these, and the review rules, before any verdict.',
   ].join('\n'));
   const platform = loadPlatform(loadManifest(appDir).runtime.technology);

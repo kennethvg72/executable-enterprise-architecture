@@ -17,6 +17,7 @@ These add to the [central role definitions](../../../enterprise-architecture/age
 - Tests the doors: launching every activity from another app, opening deep links to records the user may not see.
 - Inspects the release build: no secrets, not debuggable, backups excluded, no cleartext, nothing exported without a reason.
 - Tests the backend separately, on its own platform, including a client version that's too old ([AND-12](../standards.md#and-12-old-versions-can-be-retired)).
+- Records the evidence [platform.yaml](../platform.yaml) names, with `record-evidence.ts`, on the committed code: `test-results` (`./gradlew check`) and `device-tests` (`./gradlew allDevicesCheck`). Gradle's output isn't counted, so the audit checks the command, the commit and the exit code ([DEL-02](../../../enterprise-architecture/principles/delivery.md#del-02-tests-are-part-of-the-change)).
 
 ## Local Governance Agent
 
@@ -24,11 +25,9 @@ Before "Go": is a phone app really needed, or would a web app in the phone's bro
 
 ## Security Agent
 
-The attack playbook for this platform, written by NATAX's security specialists. It adds to the [central Security Agent role](../../../enterprise-architecture/agents/security-agent.md).
+The review playbook for this platform, written by NATAX's security specialists. It adds to the [central Security Agent role](../../../enterprise-architecture/agents/security-agent.md). You read the source and the Test Agent's tests; you run nothing. An attack without its test is a finding.
 
-- **The API is the boundary, so attack it without the app.** Call every endpoint of the backend at the edge as every role, with another user's records, with a token issued to another application, with a token from a device that isn't compliant, and as an app version that is too old ([AND-05](../standards.md#and-05-the-app-talks-only-to-natax-apis-by-identity-not-by-network), [AND-12](../standards.md#and-12-old-versions-can-be-retired)).
-- **Take the release build apart.** Decompile the signed release: secrets, internal addresses, debug flags, cleartext traffic, and whether it trusts certificates a user installed ([AND-08](../standards.md#and-08-reproducible-builds-and-upload-keys-only-the-pipeline-holds)).
-- **Knock on every door.** From another app on the same emulator, start every activity and service, send every broadcast, and open deep links to records the user may not see ([AND-06](../standards.md#and-06-every-way-into-the-app-is-a-door-and-is-locked)).
-- **Steal the device.** On a rooted emulator, read the app's storage, backups, logs and clipboard, before and after sign-out, and after the data's age limit ([AND-03](../standards.md#and-03-nothing-on-the-device-that-would-hurt-if-the-device-were-stolen)).
-
-In landscape sweeps: a vulnerability in Android, a library or the identity broker, matched against each app's version catalog and the device fleet's patch levels from device management.
+- **The API is the boundary, so read it without the app.** Every endpoint of the backend at the edge, as every role, with another user's records, with a token issued to another application, with a token from a device that isn't compliant, and as an app version that is too old ([AND-05](../standards.md#and-05-the-app-talks-only-to-natax-apis-by-identity-not-by-network), [AND-12](../standards.md#and-12-old-versions-can-be-retired)).
+- **What the release build would contain.** The build configuration, the manifest and the resources: secrets, internal addresses, debug flags, cleartext traffic, and whether it trusts certificates a user installed ([AND-08](../standards.md#and-08-reproducible-builds-and-upload-keys-only-the-pipeline-holds)). The Test Agent's inspection of the release build is its evidence.
+- **Every door.** Every activity, service, broadcast receiver and deep link in the manifest and the code: what another app on the device could start, send or open, and the tests that try it ([AND-06](../standards.md#and-06-every-way-into-the-app-is-a-door-and-is-locked)).
+- **A stolen device.** What the app keeps in storage, backups, logs and the clipboard, before and after sign-out, and after the data's age limit, and the tests that check it on a rooted emulator ([AND-03](../standards.md#and-03-nothing-on-the-device-that-would-hurt-if-the-device-were-stolen)).

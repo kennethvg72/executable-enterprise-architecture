@@ -41,8 +41,8 @@ that isn't declared in architecture.yaml `consumes`.
 <each open finding from the Test and Local Governance reviews, and whether its acceptance is allowed>
 
 ## Security findings
-<the Security Agent's report (releases/<id>/security.md) when the impact required one: each finding,
-its SEC-08 rating, and whether it is fixed; or why no attack was required>
+<the Security Agent's report (its answer, recorded by start-agent.ts in the verdict store) when the
+impact required one: each finding, its SEC-08 rating, and whether it is fixed; or why no review was required>
 
 ## Reasons
 <for a rejection: each blocking issue, with its rule ID>
@@ -56,6 +56,8 @@ its SEC-08 rating, and whether it is fixed; or why no attack was required>
 ## Architecture feedback
 <optional: rules that caused friction, seemed wrong, or were unclear; the Board reads these>
 ```
+
+The deterministic stage runs none of the candidate's code ([SEC-13](../principles/security.md#sec-13-the-pipeline-treats-every-release-candidate-as-hostile)): the test results are the Test Agent's, recorded on the commit and audited. Missing or failing evidence is a rejection, and its path forward is to fix the cause and record the evidence again.
 
 ## Who reads it
 

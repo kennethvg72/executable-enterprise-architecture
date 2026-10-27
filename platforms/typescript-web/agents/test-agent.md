@@ -24,6 +24,17 @@ This adds to the [central Test Agent role](../../../enterprise-architecture/agen
 | Audit | Each audited action writes an audit record, and audit records can't be changed or deleted ([IAM-07](../../../enterprise-architecture/principles/identity-and-access.md#iam-07-every-action-on-sensitive-data-is-attributable)) |
 | Logs captured during the tests | No session IDs, secrets, or values shaped like taxpayer identifiers ([OBS-01](../../../enterprise-architecture/principles/observability.md#obs-01-logs-are-structured-central-and-clean)) |
 
+## Your evidence
+
+For a release candidate, record the evidence [platform.yaml](../platform.yaml) names, in the application's repository, on the committed code. The pipeline runs none of it; it audits these records ([DEL-02](../../../enterprise-architecture/principles/delivery.md#del-02-tests-are-part-of-the-change)):
+
+```sh
+node <architecture>/enterprise-architecture/tools/record-evidence.ts type-check releases/<id>/type-check.txt
+node <architecture>/enterprise-architecture/tools/record-evidence.ts test-results releases/<id>/test-results.txt
+```
+
+The tests run with Node.js's TAP reporter, so that every test can be counted. Every test in a `*.test.ts` file must run and pass: a test file that `npm test` doesn't run is a test that disappeared.
+
 ## When rebuilding an existing application
 
 Read the old implementation for behavior, not code. Write tests for the behavior you find, and mark each one *confirmed* (the Problem Owner says it's intended) or *question* (it might be a bug). Bring the questions to the Problem Owner through the Development Agent. Don't carry the old bugs over.

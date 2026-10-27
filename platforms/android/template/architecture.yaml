@@ -10,10 +10,10 @@ technical-owner: null                # the app's backend API (staff-edge) needs 
 landscape-check: docs/decisions/0000-landscape-check.md   # SIM-09
 
 architecture:
-  enterprise-architecture: 5.1.0
-  android: 2.0.0
+  enterprise-architecture: 6.0.0
+  android: 3.0.0
   network: 2.1.0
-  infrastructure: 3.0.0
+  infrastructure: 4.0.0
 
 exposure: internal                   # staff on managed devices (AND-01)
 

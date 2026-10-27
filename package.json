@@ -13,7 +13,6 @@
     "generate": "node network/tools/compile.ts && node infrastructure/tools/render.ts",
     "verify": "node enterprise-architecture/tools/run-all.ts network/tools/verify.ts infrastructure/tools/verify.ts",
     "pipeline": "node enterprise-architecture/tools/pipeline.ts",
-    "verify-runner": "node enterprise-architecture/tools/verify-runner.ts",
     "release-check": "node enterprise-architecture/tools/release-check.ts",
     "test:authority": "node --test --test-concurrency=1 network/tools/authority-mutations.ts infrastructure/tools/authority-mutations.ts"
   },

@@ -4,7 +4,7 @@ What must happen when things fail, and how NATAX knows it does. Every scenario i
 
 - **Sim**: the deterministic [simulation](tools/simulate.ts), on every relevant change. Results: [generated/failure-simulation.md](generated/failure-simulation.md).
 - **App**: the application's own tests, on every release candidate.
-- **Acc**: in acceptance, on every relevant release candidate.
+- **Acc**: the Test Agent's tests in acceptance, on every relevant release candidate, recorded as its evidence and audited ([DEL-02](../enterprise-architecture/principles/delivery.md#del-02-tests-are-part-of-the-change)).
 - **Prod**: an exercise in production, on the schedule shown.
 
 | ID | Scenario | What must happen | Tested |

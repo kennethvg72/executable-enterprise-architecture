@@ -91,7 +91,7 @@ A busy instance is not an unready one. Health checks are exempt from load sheddi
 ### RES-09: Resilience is tested, not asserted
 **Rule.** Failure scenarios are defined in the [infrastructure failure catalog](../../infrastructure/failure-scenarios.md) and tested:
 
-- On every relevant change: component failures in acceptance (instance loss, database failover, dependency failure).
+- On every relevant change: component failures in acceptance (instance loss, database failover, dependency failure), tested by the Test Agent and recorded as the candidate's evidence ([DEL-02](delivery.md#del-02-tests-are-part-of-the-change)).
 - Every month: a planned switchover of every database primary (RES-02).
 - Twice a year in production: a full site failover exercise, including cutting the direct DC1–DC2 link and losing HQ. One of the two exercises happens at least six weeks before the filing deadline.
 - Every week: automated backup restore tests ([DAT-08](data.md#dat-08-a-backup-isnt-a-backup-until-it-has-been-restored)).

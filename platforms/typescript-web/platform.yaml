@@ -7,7 +7,6 @@ max-classification: taxpayer-restricted   # with a Technical Owner (OWN-03)
 exposure: [internal, staff-edge, internet]   # staff-edge: APIs for NATAX-managed devices, with bearer tokens (AND-05)
 data-stores: [app-db, core-db, files]   # PostgreSQL clusters in the landscape, and files on its file storage (DAT-06)
 dependencies: approved-dependencies.yaml
-install: npm ci --ignore-scripts      # the pipeline installs from the lockfile itself; install scripts never run (SEC-13)
-checks:                            # run by the pipeline's deterministic stage, in the application's directory
-  - { name: Type check, rule: TS-01, run: npx tsc --noEmit, needs: node_modules }
-  - { name: Tests, rule: DEL-02, run: npm test --silent, needs: node_modules, database: true, counts: node-test }
+evidence:                          # recorded by the Test Agent for every release candidate (record-evidence.ts); the pipeline audits it and runs none of it (DEL-02, SEC-13)
+  - { key: type-check, name: Type check, rule: TS-01, run: npx tsc --noEmit }
+  - { key: test-results, name: Tests, rule: DEL-02, run: npm test --silent, env: { NODE_OPTIONS: --test-reporter=tap }, format: tap, tests: "**/*.test.ts" }

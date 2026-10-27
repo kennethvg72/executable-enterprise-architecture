@@ -41,11 +41,14 @@ export interface Platform {
   exposure: string[];
   'data-stores': string[];
   dependencies: string;
-  /** How the pipeline installs the candidate's dependencies itself, from its lockfile, without running install scripts (SEC-13). */
-  install?: string;
-  /** Every check is mandatory unless marked optional: a mandatory check that can't run makes the stage INCOMPLETE. */
-  /** counts: "node-test" means the output is Node.js's test summary, and at least one test must have run. */
-  checks: { name: string; rule: string; run: string; needs: string; database?: boolean; optional?: boolean; counts?: 'node-test' }[];
+  /**
+   * What the Test Agent records for every release candidate, with record-evidence.ts, and the
+   * pipeline audits without running any of it (audit-results.ts; DEL-02, SEC-13). The key is the
+   * candidate's evidence key. format "tap": the output is Node.js's TAP, and every test the source
+   * names, in the files matching `tests`, must have passed. Without a format, the command, the
+   * commit and the exit code are audited.
+   */
+  evidence?: { key: string; name: string; rule: string; run: string; env?: Record<string, string>; format?: 'tap'; tests?: string }[];
   'required-evidence'?: string[];
 }
 
