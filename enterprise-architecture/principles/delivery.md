@@ -9,25 +9,25 @@ Small, frequent releases are the norm. The pipeline is designed for many release
 | Environment | Where | Data | Who changes it |
 |---|---|---|---|
 | **Development** | The Problem Owner's or developer's machine | Synthetic | The Development Agent, freely |
-| **Test** | DC1 and DC2, on production's idle capacity | Synthetic | The pipeline, on every release candidate |
-| **Acceptance** | DC1 and DC2, on production's idle capacity | Synthetic | The pipeline, after test passes |
+| **Test** | DC1 and DC2, on production's idle capacity | Synthetic | The team's Development and Test Agents, for the candidate's tests |
+| **Acceptance** | DC1 and DC2, on production's idle capacity | Synthetic | The team's Test Agent, for the failure tests and the previous release's tests |
 | **Production** | DC1 and DC2, active/active | Real | The pipeline only ([SEC-01](security.md#sec-01-only-the-central-pipeline-changes-production)) |
 
-Test and acceptance are isolated from production ([SEC-07](security.md#sec-07-test-environments-cant-reach-production)). They run at lower priority on capacity that production reserves for losing a datacenter, so they are the first to slow down when that happens ([RES-03](resilience.md#res-03-one-datacenter-carries-the-whole-peak)).
+Test and acceptance are isolated from production ([SEC-07](security.md#sec-07-test-environments-cant-reach-production)). The pipeline runs nothing in them: the Test Agent's tests run there, and the pipeline audits their results ([DEL-02](#del-02-tests-are-part-of-the-change)). They run at lower priority on capacity that production reserves for losing a datacenter, so they are the first to slow down when that happens ([RES-03](resilience.md#res-03-one-datacenter-carries-the-whole-peak)).
 
 ## The filing calendar
 
 The Tax Authority's filing deadline is **April 30**. The **filing season** runs from February 1 to May 15. The **peak freeze** runs from April 16 to May 3.
 
 ### DEL-01: Every change is a release candidate with evidence
-**Rule.** A change reaches production only as a [release candidate](../pipeline/release-candidate.md): a specific commit, the artifacts built from it (identified by digest), and the evidence that it is ready. The same artifact is promoted from test to acceptance to production. Nothing is rebuilt between environments.
-**Why.** If the artifact in production isn't the one that was tested, nothing was tested.
-**Verified by.** `test`: the pipeline compares artifact digests across environments.
+**Rule.** A change reaches production only as a [release candidate](../pipeline/release-candidate.md): a specific commit, the artifacts built from it (identified by digest), and the evidence that it is ready. The commit the pipeline builds and deploys is the commit that was tested and judged: since the tested commit, nothing changed except the candidate's release folder. Nothing is rebuilt between environments.
+**Why.** If what runs in production isn't what was tested, nothing was tested.
+**Verified by.** `test`: [audit-results.ts](../tools/audit-results.ts) refuses evidence recorded on other code, and the pipeline compares artifact digests across environments.
 
 ### DEL-02: Tests are part of the change
-**Rule.** Every change includes the automated tests that show it works, written or reviewed by the Test Agent. Requirements are recorded as tests wherever they can be. A change that reduces test coverage of existing behavior needs a reason.
-**Why.** At NATAX, nobody reviews code line by line. Tests, written independently of the implementation, are how intent is checked.
-**Verified by.** `test`: the pipeline runs them. `review`: the Governance Agent compares the change with its tests.
+**Rule.** Every change includes the automated tests that show it works, written or reviewed by the Test Agent. Requirements are recorded as tests wherever they can be. A change that reduces test coverage of existing behavior needs a reason. The Test Agent runs the tests in the team's environments, and records the results as the candidate's evidence with [record-evidence.ts](../tools/record-evidence.ts), on the committed code. Every test must pass. The pipeline audits the results and never reruns them ([SEC-13](security.md#sec-13-the-pipeline-treats-every-release-candidate-as-hostile)).
+**Why.** At NATAX, nobody reviews code line by line. Tests, written independently of the implementation, are how intent is checked. The Board, on who runs them: "every test done by the Test Agent in the applications repository must PASS."
+**Verified by.** `test`: [audit-results.ts](../tools/audit-results.ts): recorded with the platform's command on the code being judged; every test passed, nothing skipped; the counts add up, and every test in the source has a result. `review`: the Governance Agent compares the change with its tests.
 
 ### DEL-03: Every release can be rolled back to a known-good state
 **Rule.** Every release can be returned to the known-good state before it, its data included, by executing its plan's rollbacks ([DEL-09](#del-09-every-release-has-a-deployment-plan-and-every-step-a-rollback)). Rollback is its own procedure ([deployment.md](../pipeline/deployment.md#rollback)), not a slow re-run of the deployment. A rollback that restores no data restores service within 10 minutes. One that restores data takes as long as a careful restore needs. During the verification window, the pipeline rolls back by itself, at once ([OBS-06](observability.md#obs-06-every-deployment-is-verified-and-rolled-back-if-needed)). After the window, a rollback runs only with the Architecture Board's approval. Nobody rehearses a rollback: the Central Agents judge it, from the plan.

@@ -21,7 +21,6 @@ import { scanSecrets } from './scan-secrets.ts';
 import { validateManifest } from './validate-manifest.ts';
 import { checkApprovedArchitecture, checkPinnedVersions, runPipeline } from './pipeline.ts';
 import { releaseCheck } from './release-check.ts';
-import { EXPECTED, verifyRunner } from './verify-runner.ts';
 import { judgeGateChanges } from './verify-gate-inputs.ts';
 import { applyExceptions, exceptionProblems, ruleIds } from './lib/exceptions.ts';
 
@@ -257,44 +256,16 @@ test('the pipeline lists what a candidate changes against production', () => {
   assert.deepEqual(intentChanges(production, production), []);
 });
 
-test('the pipeline never runs candidate code outside an isolated runner, and says it is incomplete (SEC-13)', () => {
+test('without a candidate there are no test results to audit, and the stage says it is incomplete (DEL-02)', () => {
   const { sections, status } = runPipeline(APP, { today: new Date('2026-11-01') });
-  const app = sections.find(([title]) => title.startsWith('Application'))![1];
+  const results = sections.find(([title]) => title.startsWith('Test results'))![1];
   assert.equal(status, 'INCOMPLETE');
-  assert.ok(app.length > 0 && app.every((r) => r.status === 'skip' && r.rule === 'SEC-13'));
-});
-
-// The pipeline's own preflight runs the real canary; these tests stand in for it, so the test suite
-// never probes the network or writes outside its workspace on a developer's machine.
-const isolatedRunner = () => [pass('SEC-13', 'stand-in: every escape attempt failed')];
-
-test('a mandatory check that can\'t run makes the stage incomplete, not a pass', () => {
-  // With --isolated, but no installed dependencies or tools here: the fixture has no lockfile to install from.
-  const { status } = runPipeline(APP, { today: new Date('2026-10-14'), isolated: true, preflight: isolatedRunner });
-  assert.notEqual(status, 'PASS');
-});
-
-test('--isolated is checked, not believed: when the canary escapes, the candidate\'s code never runs (SEC-13)', () => {
-  const escaped = () => [fail('SEC-13', 'Run preflight: escaped. Expected: the internet is unreachable.')];
-  const { sections, status } = runPipeline(APP, { today: new Date('2026-10-14'), isolated: true, preflight: escaped });
-  const app = sections.find(([title]) => title.startsWith('Application'))![1];
-  assert.equal(status, 'FAIL');
-  assert.deepEqual(app.map((r) => r.rule), ['SEC-13']);
-  assert.match(app[0]!.message, /didn't run/);
+  assert.deepEqual(results.map((r) => [r.rule, r.status]), [['DEL-02', 'skip']]);
 });
 
 test('every command fails its own process when it finds a problem: automation reads exit codes', () => {
   const tools = join(REPO_ROOT, 'enterprise-architecture', 'tools');
   const exit = (args: string[]) => spawnSync(process.execPath, args, { cwd: REPO_ROOT, encoding: 'utf8', timeout: 120_000 }).status;
-  // A canary that "escapes", and one that doesn't, so the runner check is tested without touching the machine.
-  const canary = (escapes: boolean) => {
-    const dir = mkdtempSync(join(tmpdir(), 'canary-'));
-    writeFileSync(join(dir, 'escape.canary.ts'), `import { test } from 'node:test';\nimport assert from 'node:assert/strict';\ntest('the internet is unreachable', () => { assert.equal(${escapes}, false, 'reached 1.1.1.1:443'); });\n`);
-    return dir;
-  };
-  const expect = ['--expect', 'the internet is unreachable'];
-  assert.equal(exit([join(tools, 'verify-runner.ts'), '--canary', canary(true), ...expect]), 1, 'verify-runner, not isolated');
-  assert.equal(exit([join(tools, 'verify-runner.ts'), '--canary', canary(false), ...expect]), 0, 'verify-runner, isolated');
   const bad = mkdtempSync(join(tmpdir(), 'bad-'));
   const m = clone(loadManifest(APP));
   m['problem-owner'] = 'aquinn';
@@ -331,30 +302,15 @@ test('Board exceptions are validated before they cover anything, and cover only 
 });
 
 test('a candidate is judged against the versions it pins, or the stage says it can\'t (OWN-04)', () => {
-  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '5.0.0' }).map((r) => r.status), ['pass']);
+  const major = Number(readFileSync(join(REPO_ROOT, 'enterprise-architecture', 'VERSION'), 'utf8').split('.')[0]);
+  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': `${major}.0.0` }).map((r) => r.status), ['pass']);
   // A deprecated major isn't in this checkout: judge it against its own tag.
-  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '4.1.1' }).map((r) => r.status), ['skip']);
+  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': `${major - 1}.1.0` }).map((r) => r.status), ['skip']);
   assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '3.3.0' }).map((r) => r.status), ['skip']);
-  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': '6.0.0' }).map((r) => r.status), ['skip']);
+  assert.deepEqual(checkPinnedVersions({ 'enterprise-architecture': `${major + 1}.0.0` }).map((r) => r.status), ['skip']);
   // An older minor passes as the active one.
-  assert.deepEqual(checkPinnedVersions({ 'typescript-web': '1.0.0' }).map((r) => r.status), ['pass']);
+  assert.deepEqual(checkPinnedVersions({ network: '2.0.0' }).map((r) => r.status), ['pass']);
   assert.deepEqual(checkPinnedVersions({ 'no-such-architecture': '1.0.0' }).map((r) => r.status), ['skip']);
-});
-
-test('a canary run counts only when it finished and completed every attempt (SEC-13)', () => {
-  const canary = (body: string) => {
-    const dir = mkdtempSync(join(tmpdir(), 'canary-'));
-    writeFileSync(join(dir, 'escape.canary.ts'), `import { test } from 'node:test';\n${body}\n`);
-    return dir;
-  };
-  const counts = (dir: string) => !verifyRunner({ canary: dir, expected: ['one', 'two'] }).some((r) => r.status === 'fail');
-  assert.equal(counts(canary(`test('one', () => {});\ntest('two', () => {});`)), true);
-  // "ok 1", then the process dies before the rest of the attempts run.
-  assert.equal(counts(canary(`test('one', () => {});\ntest('two', () => { process.exit(0); });`)), false);
-  // An attempt that was skipped verified nothing.
-  assert.equal(counts(canary(`test('one', () => {});\ntest('two', { skip: true }, () => {});`)), false);
-  // The real canary must run every attempt of its phase.
-  assert.deepEqual(EXPECTED.preflight.slice(0, 5), EXPECTED.escape);
 });
 
 test('only an approved, unchanged architecture can judge a candidate (AGT-04)', () => {
@@ -495,9 +451,9 @@ test('every anti-pattern breaks a rule that exists, and has a regression sample 
 
 test('an older minor version passes as the active one; a deprecated major warns (OWN-04)', () => {
   const m = clone(loadManifest(APP));
-  m.architecture = { 'enterprise-architecture': '4.0.0', 'typescript-web': '1.0.0', network: '1.0.0', infrastructure: '2.0.0' };
+  m.architecture = { 'enterprise-architecture': '4.0.0', 'typescript-web': '1.0.0', network: '2.0.0', infrastructure: '2.0.0' };
   const own04 = validateManifest(APP, m).filter((r) => r.rule === 'OWN-04');
-  assert.ok(own04.some((r) => r.status === 'pass' && /typescript-web 1\.0\.0 is superseded by 1\.3\.1/.test(r.message)));
+  assert.ok(own04.some((r) => r.status === 'pass' && /network 2\.0\.0 is superseded by 2\.1\.0/.test(r.message)));
   m.architecture['enterprise-architecture'] = '1.0.0';
   assert.ok(validateManifest(APP, m).some((r) => r.rule === 'OWN-04' && r.status === 'warn' && /2027-06-01/.test(r.message)));
 });

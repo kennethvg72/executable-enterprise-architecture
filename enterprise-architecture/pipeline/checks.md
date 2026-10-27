@@ -31,33 +31,33 @@ Evaluated at intake for every candidate, whatever the change. Each can restrict 
 |---|---|---|---|
 | Manifest is complete and valid | OWN-03, DAT-01, RES-01, IAM-01, OBS-04 | Deterministic | ✅ `enterprise-architecture/tools/validate-manifest.ts` |
 | No secrets in the repository | SEC-03 | Deterministic | ✅ `enterprise-architecture/tools/scan-secrets.ts` (simple patterns; a real pipeline uses a dedicated scanner) |
-| The application's tests pass, rerun by the pipeline | DEL-02 | Deterministic | ✅ runs the application's `npm test` |
+| The Test Agent's evidence, as the platform names it: recorded with the platform's command on the code being judged; every test passed, nothing skipped; the counts add up; every test in the source has a result | DEL-02, SEC-13, DAT-07 | Deterministic | ✅ `enterprise-architecture/tools/audit-results.ts`; recorded with `record-evidence.ts` |
 | Dependencies have a recorded reason and are pinned | SIM-01, SIM-05, SEC-05 | Deterministic | ✅ `enterprise-architecture/tools/check-dependencies.ts` |
 | Dependencies have no known reachable critical vulnerabilities | SEC-05, SEC-08 | Deterministic | 📄 vulnerability scanner against a mirror of advisories |
 | The deployment plan: every step a pre-approved action for the platform, on a granted target, covered by a rollback that undoes it; migrations with their way back; class A and B never stopped; units without privileges | DEL-08, DEL-09, DEL-03, DAT-07, SEC-09, INF-11 | Deterministic + review | ✅ `enterprise-architecture/tools/check-deployment.ts`; the Governance Agent's deployment pass judges the order, the states between steps and whether each rollback restores the known-good state |
 | The Board's exception and grant files are each for something in the landscape; every grant approved and explained; every shared system has a steward | SIM-07, DEL-08, OWN-10 | Deterministic | ✅ `enterprise-architecture/tools/check-deployment.ts` |
 | The Problem Owner's "Release" is authentic: a tag signed with their workforce identity, or approval in the pipeline | AGT-06 | Deterministic | 📄 signature verification; simulated here |
-| The candidate's code runs only in a disposable runner, whose isolation the hostile canary has verified since the runner last changed | SEC-13 | Deterministic | ✅ `pipeline.ts` runs candidate code only with `--isolated`; ✅ the canary and `verify-runner.ts`; 📄 the runner itself |
+| The pipeline runs none of the candidate's code | SEC-13 | Deterministic | ✅ no tool runs it; the tools' tests show a candidate's test script never runs |
 | Open local findings are listed in the candidate | AGT-02 | Deterministic + review | 📄 parse review files; the Governance Agent compares them by hand here |
 | An intent-drift report exists for the candidate's commit range, nothing has changed the recorded intent since, and its inventory lists every item in force (for applications on enterprise-architecture 2.0.0 or later) | AGT-12 | Deterministic | ✅ `check-intent.ts` |
 | The drift report's findings: no unresolved contradiction or letter-not-spirit; a few in-force items re-checked | AGT-12 | Review | Governance Agent |
 
 ## application
 
-The platform's own checks, as listed in its `platform.yaml`, run in every candidate: for TypeScript, the type check and the tests against a real database; for Power Apps, the solution checker and the Playwright tests; for Android, the Gradle check and the tests on managed emulators. Where a platform's tools aren't available, the check is reported as skipped, never as passed.
+The platform's evidence, as listed in its `platform.yaml`, is recorded by the Test Agent and audited for every candidate: for TypeScript, the type check and the tests against a real database; for Power Apps, the solution checker and the Playwright tests; for Android, the Gradle check and the tests on managed emulators. The pipeline runs none of it ([SEC-13](../principles/security.md#sec-13-the-pipeline-treats-every-release-candidate-as-hostile)). Missing evidence is a failure, never a pass. Where a platform's output can't be counted (Power Apps, Android), the audit checks the command, the commit and the exit code.
 
 | Check | Rules | Kind | Here |
 |---|---|---|---|
 | Design is the simplest that meets the requirements; no unexplained components | SIM-01..08 | Review | Governance Agent |
 | Input validation, output encoding, parameterized queries | SEC-06 | Deterministic + review | 📄 static analysis; ✅ the Test Agent's injection tests run as part of the application's tests |
-| Contract tests: against declared providers, and declared consumers' expectations against this provider | INT-03, INT-06 | Deterministic | 📄 run in test |
+| Contract tests: against declared providers, and declared consumers' expectations against this provider | INT-03, INT-06 | Deterministic | 📄 the Test Agent's, in test, in its evidence |
 
 ## data
 
 | Check | Rules | Kind | Here |
 |---|---|---|---|
 | Migrations apply cleanly from an empty database | DAT-07 | Deterministic | ✅ the application's tests apply all migrations |
-| Migrations upgrade the schema currently in production, with populated synthetic data, within time and locking limits; the previous release's tests pass against the new schema | DAT-07, DEL-03 | Deterministic | 📄 in acceptance |
+| Migrations upgrade the schema currently in production, with populated synthetic data, within time and locking limits; the previous release's tests pass against the new schema | DAT-07, DEL-03 | Deterministic + review | ✅ the previous release's tests, the Test Agent's evidence, audited by `audit-results.ts`; the time and locking limits, the Governance Agent from the evidence |
 | No taxpayer-restricted data outside systems of record; classification plausible | DAT-01, DAT-02 | Review + deterministic | Governance Agent; ✅ the Test Agent's pattern scan in the application's tests |
 | Test fixtures come from a generator in the repository | DAT-04 | Deterministic | 📄 fixture provenance check |
 | Grants are least privilege for the application's role; audit records can't be changed | SEC-09, IAM-07 | Deterministic | ✅ the application's tests check its own grants |
@@ -70,7 +70,7 @@ The platform's own checks, as listed in its `platform.yaml`, run in every candid
 | Policy invariants hold (internet only to the edge, admin only from PAWs, databases only via endpoints, test can't reach production, only the egress proxy reaches the internet, every DC1↔DC2 flow can transit HQ) | SEC-02, SEC-07, IAM-06, RES-04, RES-05, INT-05 | Deterministic | ✅ `network/tools/verify.ts` |
 | The Test Agent's explicit network expectations hold | SEC-02 and others | Deterministic | ✅ `network/expectations.yaml` |
 | Generated configuration matches the intent | DEL-04 | Deterministic | ✅ `network/tools/verify.ts` |
-| Targeted probes for new and removed paths, in test and acceptance | SEC-02 | Deterministic | ✅ probe plan generated by `compile.ts`, run by `probe.ts`; 📄 executed from each vantage point in the environments |
+| Targeted probes for new and removed paths, in test and acceptance | SEC-02 | Deterministic | ✅ probe plan generated by `compile.ts`, run by `probe.ts`; 📄 the Network Agent's probes, from each vantage point in the environments: they test the network's policy, not the candidate's code |
 
 ## load-balancing
 
@@ -96,7 +96,7 @@ The platform's own checks, as listed in its `platform.yaml`, run in every candid
 | One identity provider per application, matching its users and exposure | IAM-01 | Deterministic | ✅ `validate-manifest.ts` |
 | Every endpoint authorized for every role, deny by default; records belong to their owner | IAM-04 | Deterministic | ✅ the application's own tests (Test Agent) |
 | Workload certificates and mTLS configured | IAM-05 | Deterministic | 📄 configuration check |
-| The Security Agent attacked it in acceptance, when [the impact requires](change-impact.md#the-security-agent); no open High or Critical findings | SEC-12, SEC-08 | Review | 📄 acceptance stage; the [Security Agent](../agents/security-agent.md) can be run here as a separate agent session against a local deployment |
+| The Security Agent reviewed it, when [the impact requires](change-impact.md#the-security-agent); no open High or Critical findings; every missing attack it named is now a test | SEC-12, SEC-08 | Review | the [Security Agent](../agents/security-agent.md), started by the Governance Agent with `start-agent.ts`; the Governance Agent judges its findings |
 
 ## resilience
 
@@ -104,7 +104,7 @@ The platform's own checks, as listed in its `platform.yaml`, run in every candid
 |---|---|---|---|
 | Class matches the Problem Owner's statement | RES-01 | Review | Governance Agent |
 | Every declared dependency's failure is tested | RES-07, INT-04 | Deterministic + review | ✅ the application's own tests; the Governance Agent checks each `consumes` entry has a failure test |
-| Relevant failure scenarios pass in acceptance | RES-09 | Deterministic | 📄 [infrastructure failure catalog](../../infrastructure/failure-scenarios.md); ✅ the design-level simulation in `infrastructure/tools/simulate.ts` |
+| Relevant failure scenarios pass in acceptance | RES-09 | Deterministic + review | ✅ the Test Agent's tests, in its evidence, audited by `audit-results.ts`; the Governance Agent checks that every scenario in the [infrastructure failure catalog](../../infrastructure/failure-scenarios.md) the change touches has one; ✅ the design-level simulation in `infrastructure/tools/simulate.ts` |
 
 ## operations
 
@@ -113,4 +113,4 @@ The platform's own checks, as listed in its `platform.yaml`, run in every candid
 | `/health/live`, `/health/ready` and `/metrics` exist and behave | OBS-02, OBS-03 | Deterministic | ✅ the application's own tests |
 | No secrets or taxpayer identifiers in logs | OBS-01 | Deterministic | ✅ the application's own tests (log capture) |
 | Alerts have an owner and a runbook | OBS-04 | Deterministic | ✅ `validate-manifest.ts` |
-| Rollback rehearsed and measured when the release includes a migration | DEL-03 | Deterministic | 📄 acceptance stage |
+| Each rollback restores the known-good state, data included, in the time DEL-03 allows | DEL-03 | Review | the Governance Agent's deployment pass; nobody rehearses it |

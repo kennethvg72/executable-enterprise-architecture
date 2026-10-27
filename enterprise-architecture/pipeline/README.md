@@ -15,18 +15,17 @@ It evaluates a release as **one system**. A code change may need a new network p
         │
  2. Impact ─────────── which domains does this change actually affect?
         │
- 3. Deterministic ──── the checks the impact requires: tests, policy, configuration, capacity
+ 3. Deterministic ──── the checks the impact requires: policy, configuration, capacity, and
+        │              the audit of the Test Agent's results
         │
  4. Review ─────────── the Governance Agent judges what checks can't
         │
- 5. Test ───────────── deploy to test: integration tests, targeted network probes
+ 5. Security ───────── the Security Agent reviews the code and audits its security tests,
+        │              where the impact requires it
         │
- 6. Acceptance ─────── deploy to acceptance: the Security Agent's attack, failure tests,
-        │              rollback rehearsal, where the impact requires them
-        │
- 7. Verdict ────────── approve, or reject with a compliant path forward
+ 6. Verdict ────────── approve, or reject with a compliant path forward
         │ approved
- 8. Production ─────── network and load balancer changes first, then a rolling deployment
+ 7. Production ─────── network and load balancer changes first, then a rolling deployment
         │              across DC1 and DC2, verified and rolled back automatically if needed
         ▼
  release record
@@ -38,9 +37,9 @@ It evaluates a release as **one system**. A code change may need a new network p
 | 2. Impact | Determine the affected domains from the actual diff. | [change-impact.md](change-impact.md) |
 | 3. Deterministic | Run the checks for every affected domain. A failed check that enforces a mandatory rule, and isn't covered by a Board exception, ends the run: reject. | [checks.md](checks.md) |
 | 4. Review | The Governance Agent reviews the `review` rules for affected domains, and the local agents' findings. | [governance-agent.md](../agents/governance-agent.md) |
-| 5–6. Test, acceptance | Deploy the candidate's artifact to test, then acceptance, and run what the impact requires there, including the [Security Agent](../agents/security-agent.md)'s attack. A failure is a rejection with a path forward, like any other. | [deployment.md](deployment.md) |
-| 7. Verdict | Approve or reject, with reasons, rule IDs and, for a rejection, the path forward. | [verdict.md](verdict.md) |
-| 8. Production | Promote the approved artifact, by digest. Verify each step. | [deployment.md](deployment.md) |
+| 5. Security | When the impact requires it, the Governance Agent starts the [Security Agent](../agents/security-agent.md): it reads the code the way an attacker would, and audits the Test Agent's security tests. Nothing of the candidate runs ([SEC-13](../principles/security.md#sec-13-the-pipeline-treats-every-release-candidate-as-hostile)). | [security-agent.md](../agents/security-agent.md) |
+| 6. Verdict | Approve or reject, with reasons, rule IDs and, for a rejection, the path forward. | [verdict.md](verdict.md) |
+| 7. Production | Build the approved commit, and deploy the artifact by digest. Verify each step. | [deployment.md](deployment.md) |
 
 ## Scheduled runs
 
@@ -52,7 +51,6 @@ Not everything runs on every change. These run on a schedule, across the whole l
 | Configuration drift detection | Daily | [DEL-04](../principles/delivery.md#del-04-infrastructure-and-network-are-code) |
 | Ownership check | Weekly | [OWN-02](../principles/ownership.md#own-02-no-owner-means-decommission) |
 | Dependency vulnerability scan | Daily | [SEC-05](../principles/security.md#sec-05-dependencies-are-pinned-sourced-and-scanned) |
-| Security Agent's landscape sweep | When threats change, and at least monthly | [SEC-12](../principles/security.md#sec-12-security-is-tested-by-someone-who-didnt-build-it) |
 | Backup restore tests | Weekly | [DAT-08](../principles/data.md#dat-08-a-backup-isnt-a-backup-until-it-has-been-restored) |
 | Database switchover | Monthly | [RES-02](../principles/resilience.md#res-02-dc1-and-dc2-are-both-production-all-the-time) |
 | Site failover exercise | Twice a year | [RES-09](../principles/resilience.md#res-09-resilience-is-tested-not-asserted) |
@@ -64,7 +62,7 @@ Not everything runs on every change. These run on a schedule, across the whole l
 |---|---|
 | Problem Owner | Approve a release candidate for submission ("Release"), with their own identity. |
 | Development Agent | Prepare a release candidate and read verdicts. |
-| Security Agent | Attack candidates in acceptance with test identities; read production configuration, inventories and observed flows; write findings. It cannot change anything, approve, or deploy. |
+| Security Agent | Read what the Governance Agent gives it, a candidate and the architecture, and answer with findings. It runs nothing, and cannot change anything, approve, or deploy. |
 | Governance Agent | Read candidates, the architecture and the landscape; run checks; write verdicts. It cannot deploy. |
 | Deployment process | Deploy candidates that have an approved verdict in the pipeline's verdict store, by digest. It is the only identity with production write access. It cannot approve. |
 | Architecture Board | Change the architecture, and with it what the Governance Agent may approve. Grant exceptions. It doesn't approve individual candidates. |
@@ -72,7 +70,7 @@ Not everything runs on every change. These run on a schedule, across the whole l
 
 Separating "approve" from "deploy" is separation of duties: neither function can complete a production change on its own. It doesn't make compromise harmless. A compromised Governance Agent could approve something malicious, which is why its decisions are recorded, explained and checkable, and why the deterministic checks can't be overridden. A compromised deployment process holds production write access, which is why it deploys only digests that carry an approved verdict, and why its records are tamper-resistant.
 
-Code from release candidates runs only in disposable, unprivileged runners ([SEC-13](../principles/security.md#sec-13-the-pipeline-treats-every-release-candidate-as-hostile)), never where verdicts are written or deployment credentials live. A hostile canary verifies that isolation, and `pipeline.ts` runs candidate code only with `--isolated`.
+The pipeline never runs a release candidate's code before the verdict ([SEC-13](../principles/security.md#sec-13-the-pipeline-treats-every-release-candidate-as-hostile)). It reads the candidate, runs the architecture's deterministic checks over its files, and audits the results the Test Agent recorded. The one place where a candidate's code still runs centrally is its build and deployment, after the verdict, with the rights its grants give it.
 
 ## When the AI provider is down
 
@@ -92,7 +90,7 @@ The Governance Agent runs once per release candidate, as a command, never as a c
 ```sh
 node enterprise-architecture/tools/regression.ts <provider> <model>      # twice; each writes pipeline/regression/results/...
 # then pin provider, model and both results in pipeline/models.yaml: a release of the pipeline
-node enterprise-architecture/tools/govern.ts <application repository> <candidate id> [--isolated]
+node enterprise-architecture/tools/govern.ts <application repository> <candidate id>
 ```
 
 **The review runs in passes**, because a model asked about every rule at once forgets some, and nobody can tell which. The tool computes the checklist from the rule texts: every rule whose "Verified by" says `review`, in the architectures the candidate pins. It splits them into passes of at most ten rules, keeping a file's rules together. Each pass is a fresh question, with the rules' full text and the anti-patterns that break them, and must answer every one of its rules: compliant, non-compliant or not applicable, with evidence in a file that exists. One more pass looks across all the rules, with the whole anti-pattern catalog, for what falls between the passes. A rule left unanswered, or answered without evidence, means no verdict. **The tool decides**, not a model: any non-compliant rule or finding the Board hasn't excepted rejects, and so does a deterministic stage that didn't pass. A model writes only the reasons and the path forward of a rejection.
@@ -102,10 +100,10 @@ node enterprise-architecture/tools/govern.ts <application repository> <candidate
 The deterministic stage is one command:
 
 ```sh
-npm run pipeline -- <path to the application repository> [--isolated]
+npm run pipeline -- <path to the application repository> [--candidate releases/<id>]
 ```
 
-It validates the manifest against the application's platform, scans for secrets, checks dependencies, compiles and verifies the network policy, renders and verifies the load balancer configuration, checks capacity and topology, and runs the platform's own checks. It reports which checks ran and which were skipped, and the Governance Agent includes that output in the verdict.
+It validates the manifest against the application's platform, scans for secrets, checks dependencies, compiles and verifies the network policy, renders and verifies the load balancer configuration, checks capacity and topology, and audits the Test Agent's recorded results ([audit-results.ts](../tools/audit-results.ts)): the evidence the platform names, recorded with `record-evidence.ts` on the code being judged, with every test passed. It reports which checks ran and which were skipped, and the Governance Agent includes that output in the verdict.
 
 The result is one of three, because a check that didn't run proves nothing:
 
@@ -113,17 +111,15 @@ The result is one of three, because a check that didn't run proves nothing:
 |---|---|---|
 | **PASS** | Every mandatory check ran and passed | 0 |
 | **FAIL** | At least one check failed | 1 |
-| **INCOMPLETE** | Nothing failed, but a mandatory check couldn't run (a missing tool, no test database, no isolated runner) | 3 |
+| **INCOMPLETE** | Nothing failed, but a mandatory check couldn't run (a missing tool, no candidate to audit, an architecture that isn't its approved version) | 3 |
 
 Only PASS lets the stage pass. INCOMPLETE blocks a verdict like a failure; the path forward is to run the missing checks, not to explain them away.
 
-The platform's checks run the candidate's own code: its tests, its build scripts, the tools its lockfile installs. They run only with `--isolated`, which states that the command is running inside a disposable runner ([SEC-13](../principles/security.md#sec-13-the-pipeline-treats-every-release-candidate-as-hostile)). The flag doesn't create isolation; the hostile canary verifies it:
+The Test Agent records the evidence in the application's repository, on committed code, with the platform's own command:
 
 ```sh
-node enterprise-architecture/tools/verify-runner.ts    # inside the runner: every escape attempt must fail
+node <architecture>/enterprise-architecture/tools/record-evidence.ts test-results releases/<id>/test-results.txt
 ```
-
-Run on a laptop, the canary shows what a release candidate could do there: read its credentials, write outside the workspace, reach the internet. That's why `--isolated` exists. In this proof of concept there is no runner, so a Governance Agent session runs the application's checks only inside its own verified sandbox (BOOTSTRAP, step 4), and says so in its verdict.
 
 What has to be true for the stage to pass, beyond the checks themselves:
 
@@ -135,4 +131,4 @@ On a laptop, then, the honest result is INCOMPLETE. The parts that did run still
 
 In this proof of concept, some things are simulated:
 - The Problem Owner's signed "Release" is replaced by a file in the repository, and the verdict store by the verdict file next to the candidate. The Governance Agent says so in its verdict.
-- Test, acceptance and production deployment (stages 5, 6 and 8) are described, not executed. There is no NATAX to deploy to.
+- The production build and deployment (stage 7) are described, not executed. There is no NATAX to deploy to.

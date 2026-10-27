@@ -49,10 +49,17 @@ Each entry has four parts: what it **looks like** in a diff, **why it hurts**, t
 **Instead.** Read the output back, with a reader whose grammar refuses what it doesn't know, and let the real software be the authority. Ship every checker with the mutations it must catch.
 
 ### AP-07: Believing the candidate
-**Looks like.** The pipeline takes the candidate's word for something it must know independently: the test counts it prints, a review file it wrote, a `models:` field, a summary written by the agent asking for approval, an "isolated" flag nobody checked.
-**Why it hurts.** Code that can fail a test can also report that it passed. Anything the candidate controls is a claim.
-**Breaks.** [SEC-13](principles/security.md#sec-13-the-pipeline-treats-every-release-candidate-as-hostile), [AGT-01](principles/ai-agents.md#agt-01-separate-agents-for-separate-duties).
-**Instead.** Decide what must hold against a malicious candidate outside its code: from the architecture, the probes, the authorities, the Security Agent. Label the candidate's own output as its claims.
+**Looks like.** The pipeline takes the candidate's word where it must check:
+- a test summary read instead of audited, so "fail 0" counts as a pass;
+- results without the commit they ran on;
+- a skipped test read as passed;
+- a review file the Development Agent wrote;
+- a `models:` field;
+- a summary written by the agent asking for approval.
+
+**Why it hurts.** The Test Agent's evidence is trusted, but only after it is audited. Unaudited, it lets honest mistakes through: tests run on yesterday's code, a test file nobody runs any more, a summary that says less than the results.
+**Breaks.** [SEC-13](principles/security.md#sec-13-the-pipeline-treats-every-release-candidate-as-hostile), [DEL-02](principles/delivery.md#del-02-tests-are-part-of-the-change), [AGT-01](principles/ai-agents.md#agt-01-separate-agents-for-separate-duties).
+**Instead.** Audit the record, never a summary of it: recorded with the platform's command, on the code being judged; every test passed, nothing skipped; the counts add up, and every test in the source has a result ([audit-results.ts](tools/audit-results.ts)). Never rerun it: the pipeline runs none of the candidate's code. What must hold against a malicious candidate is decided from the architecture, the probes and the authorities.
 
 ### AP-08: The blanket exception
 **Looks like.** An exception that covers a whole rule, has no end date or a renewal every year, or is the same exception granted to several applications.

@@ -67,49 +67,51 @@ architectures:
       activated: 2026-10-27
       proposal: enterprise-architecture/governance/proposals/2026-012-a-change-is-a-version.md
     - version: 5.0.0
-      status: superseded            # by 5.1.0, a minor version: applications pinning it pass as if they pinned 5.1.0
+      status: deprecated            # by 6.0.0
+      decommission-date: 2027-06-01
       activated: 2026-10-27
       proposal: enterprise-architecture/governance/proposals/2026-013-deployments-and-shared-systems.md
     - version: 5.1.0
-      status: active
+      status: deprecated            # by 6.0.0
+      decommission-date: 2027-06-01
       activated: 2026-10-27
       proposal: enterprise-architecture/governance/proposals/2026-014-the-governance-agent-starts-the-others.md
+    - version: 6.0.0
+      status: active
+      activated: 2026-10-27
+      proposal: enterprise-architecture/governance/proposals/2026-015-audit-dont-rerun.md
 
   typescript-web:
     - version: 1.0.0
-      status: superseded            # by 1.3.1: applications pinning it pass as if they pinned 1.3.1
+      status: deprecated            # by 2.0.0
+      decommission-date: 2027-06-01
       activated: 2026-10-14
     - version: 1.1.0
-      status: superseded
+      status: deprecated            # by 2.0.0
+      decommission-date: 2027-06-01
       activated: 2026-10-22
       proposal: enterprise-architecture/governance/proposals/2026-002-intent-drift-review.md
     - version: 1.2.0
-      status: superseded
+      status: deprecated            # by 2.0.0
+      decommission-date: 2027-06-01
       activated: 2026-10-22
       proposal: enterprise-architecture/governance/proposals/2026-003-every-request-says-why.md
     - version: 1.3.0
-      status: superseded            # by 1.3.1, a patch: applications pinning it pass as if they pinned 1.3.1
+      status: deprecated            # by 2.0.0
+      decommission-date: 2027-06-01
       activated: 2026-10-27
       proposal: enterprise-architecture/governance/proposals/2026-012-a-change-is-a-version.md
     - version: 1.3.1
-      status: active                # links only: DEL-03 and DAT-07 have new titles
+      status: deprecated            # by 2.0.0
+      decommission-date: 2027-06-01
       activated: 2026-10-27
       proposal: enterprise-architecture/governance/proposals/2026-013-deployments-and-shared-systems.md
+    - version: 2.0.0
+      status: active
+      activated: 2026-10-27
+      proposal: enterprise-architecture/governance/proposals/2026-015-audit-dont-rerun.md
 
   power-apps:
-    - version: 1.0.0
-      status: superseded            # by 1.2.0, a minor version: applications pinning it pass as if they pinned 1.2.0
-      activated: 2026-10-14
-    - version: 1.1.0
-      status: superseded
-      activated: 2026-10-22
-      proposal: enterprise-architecture/governance/proposals/2026-002-intent-drift-review.md
-    - version: 1.2.0
-      status: active
-      activated: 2026-10-22
-      proposal: enterprise-architecture/governance/proposals/2026-003-every-request-says-why.md
-
-  android:
     - version: 1.0.0
       status: deprecated            # by 2.0.0
       decommission-date: 2027-06-01
@@ -127,7 +129,32 @@ architectures:
     - version: 2.0.0
       status: active
       activated: 2026-10-27
+      proposal: enterprise-architecture/governance/proposals/2026-015-audit-dont-rerun.md
+
+  android:
+    - version: 1.0.0
+      status: deprecated            # by 2.0.0
+      decommission-date: 2027-06-01
+      activated: 2026-10-14
+    - version: 1.1.0
+      status: deprecated            # by 2.0.0
+      decommission-date: 2027-06-01
+      activated: 2026-10-22
+      proposal: enterprise-architecture/governance/proposals/2026-002-intent-drift-review.md
+    - version: 1.2.0
+      status: deprecated            # by 2.0.0
+      decommission-date: 2027-06-01
+      activated: 2026-10-22
+      proposal: enterprise-architecture/governance/proposals/2026-003-every-request-says-why.md
+    - version: 2.0.0
+      status: deprecated            # by 3.0.0
+      decommission-date: 2027-06-01
+      activated: 2026-10-27
       proposal: enterprise-architecture/governance/proposals/2026-013-deployments-and-shared-systems.md
+    - version: 3.0.0
+      status: active
+      activated: 2026-10-27
+      proposal: enterprise-architecture/governance/proposals/2026-015-audit-dont-rerun.md
 
   network:
     - version: 1.0.0
@@ -154,9 +181,14 @@ architectures:
       activated: 2026-10-26
       proposal: enterprise-architecture/governance/proposals/2026-010-lessons-from-real-use.md
     - version: 3.0.0
-      status: active
+      status: deprecated            # by 4.0.0
+      decommission-date: 2027-06-01
       activated: 2026-10-27
       proposal: enterprise-architecture/governance/proposals/2026-013-deployments-and-shared-systems.md
+    - version: 4.0.0
+      status: active
+      activated: 2026-10-27
+      proposal: enterprise-architecture/governance/proposals/2026-015-audit-dont-rerun.md
 
 # Rules the Board has made mandatory for every application, regardless of pinned version.
 mandatory-immediately: []

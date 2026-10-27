@@ -67,7 +67,6 @@ npm test           # the tools' own tests: each makes a realistic mistake and ch
 npm run generate   # compile intent into firewall rules, load balancer and database configuration
 npm run verify     # check the generated policy and configuration: INCOMPLETE without the Linux tools that prove it
 npm run pipeline -- <path to an application>        # the pipeline's deterministic stage: PASS, FAIL or INCOMPLETE
-npm run verify-runner                               # the hostile canary: is this a safe place to run candidates?
 node infrastructure/tools/simulate.ts               # what happens when sites and links fail
 ```
 

@@ -1,6 +1,6 @@
 # Change impact
 
-Not every release needs every check. A small UI change shouldn't trigger thousands of network probes. A one-line change to a connection pool setting, on the other hand, might need load testing. The pipeline works out what a change affects and runs the checks for those domains, plus a small set that always run.
+Not every release needs every check. A small UI change shouldn't trigger thousands of network probes. A one-line change to a connection pool setting, on the other hand, might need load testing. The pipeline works out what a change affects and requires the checks for those domains, plus a small set that always run.
 
 The Governance Agent determines impact from the **actual diff** between the candidate's commit and the commit currently in production. The impact used is the **union** of three things: the candidate's `declared-impact`, the domains the trigger table below selects, and the Governance Agent's own assessment. Any difference between them is recorded in the verdict. An undeclared impact is itself a finding: the Development Agent misjudged the change.
 
@@ -42,14 +42,14 @@ These are the domains a release is judged in. Each maps to the checks in [checks
 
 ## The Security Agent
 
-The [Security Agent](../agents/security-agent.md) attacks the candidate in acceptance ([SEC-12](../principles/security.md#sec-12-security-is-tested-by-someone-who-didnt-build-it)) when any of these is true:
+The [Security Agent](../agents/security-agent.md) reviews the candidate ([SEC-12](../principles/security.md#sec-12-security-is-reviewed-by-someone-who-didnt-build-it)) when any of these is true:
 
 - It is the application's first release.
 - The impact includes **identity**, **data** or **network**.
 - The application is exposed beyond NATAX's internal network (`internet` or `staff-edge`), or is class A, and the impact includes **application**.
 - The change touches anything that parses input from outside NATAX: uploads, imports, messages from external systems.
 
-Otherwise it doesn't, and the verdict says why. The landscape sweeps catch what this misses.
+Otherwise it doesn't, and the verdict says why.
 
 ## Judgment is still needed
 

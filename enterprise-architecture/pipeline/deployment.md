@@ -1,8 +1,8 @@
 # Deployment
 
-The deployment process is the only identity with production write access. It deploys a candidate's artifact, identified by digest ([DEL-01](../principles/delivery.md#del-01-every-change-is-a-release-candidate-with-evidence)), to test and acceptance as part of the candidate's evaluation, and to production only once the pipeline's verdict store holds an approved verdict for that digest ([verdict.md](verdict.md)). A verdict anywhere else, such as the copy in the application's repository, is never a reason to deploy.
+The deployment process is the only identity with production write access. It builds and deploys a candidate's artifact, identified by digest ([DEL-01](../principles/delivery.md#del-01-every-change-is-a-release-candidate-with-evidence)), to production only once the pipeline's verdict store holds an approved verdict for its commit ([verdict.md](verdict.md)). A verdict anywhere else, such as the copy in the application's repository, is never a reason to deploy.
 
-Most of this page describes services in DC1 and DC2. Power Apps and Android apps are delivered differently; see [per platform](#per-platform) below. The environments are the same idea everywhere: test and acceptance with synthetic data ([DAT-04](../principles/data.md#dat-04-non-production-environments-use-synthetic-data-only)), then production, and nothing reaches production by any other route.
+Most of this page describes services in DC1 and DC2. Power Apps and Android apps are delivered differently; see [per platform](#per-platform) below. The environments are the same idea everywhere: test and acceptance with synthetic data ([DAT-04](../principles/data.md#dat-04-non-production-environments-use-synthetic-data-only)), where the team's Test Agent tests, then production, and nothing reaches production by any other route.
 
 ## What a deployment may do
 
@@ -52,9 +52,16 @@ A release can change the application, the database schema and its files at once;
 
 This way, every intermediate state is one in which both the old and the new version work. That is what makes rollback possible at any point ([DEL-03](../principles/delivery.md#del-03-every-release-can-be-rolled-back-to-a-known-good-state)).
 
-## Test and acceptance
+## Before the verdict, nothing runs
 
-Deploy the artifact, apply the expand steps, then run what the impact requires ([checks.md](checks.md)): integration tests, contract tests, targeted network probes for new and removed paths, the [Security Agent](../agents/security-agent.md)'s attack, failure tests, and, for a migration the application keeps running through, the previous release's tests against the new schema ([DAT-07](../principles/data.md#dat-07-schema-changes-are-versioned-and-each-has-its-way-back)). Any failure is a rejection with a path forward. Nobody rehearses the deployment or its rollback: the Central Agents judge them ([DEL-03](../principles/delivery.md#del-03-every-release-can-be-rolled-back-to-a-known-good-state)).
+Nothing of the candidate runs centrally before the verdict ([SEC-13](../principles/security.md#sec-13-the-pipeline-treats-every-release-candidate-as-hostile)). The team's Test Agent runs what the impact requires ([checks.md](checks.md)) in test and acceptance, and records it as the candidate's evidence ([DEL-02](../principles/delivery.md#del-02-tests-are-part-of-the-change)):
+- integration tests and contract tests;
+- failure tests;
+- for a migration the application keeps running through, the previous release's tests against the new schema ([DAT-07](../principles/data.md#dat-07-schema-changes-are-versioned-and-each-has-its-way-back)).
+
+The Network Agent's targeted probes for new and removed paths run there too: they test the network's policy, not the candidate's code. The pipeline audits the evidence. A failed or missing test is a rejection with a path forward. Nobody rehearses the deployment or its rollback: the Central Agents judge them ([DEL-03](../principles/delivery.md#del-03-every-release-can-be-rolled-back-to-a-known-good-state)).
+
+The build and the deployment are the one place where a candidate's code runs centrally: its build scripts, its steps, its migrations, with the rights its grants give it. How that is contained is settled with the first deployment that needs it.
 
 ## Rolling deployment to production
 
@@ -90,8 +97,8 @@ Rollback runs the plan's rollbacks, for the steps that ran, in reverse order: it
 
 | | Power Apps | Android |
 |---|---|---|
-| **Artifact** | The managed solution, packed and checked by the pipeline | The signed release bundle, built by the pipeline, which holds the upload key |
-| **Test and acceptance** | Imported into the test environment, with test connections and synthetic data; the Playwright and permission tests run there | Installed on managed emulators and test devices, against the backend's test environment |
+| **Artifact** | The managed solution, packed by the pipeline after the verdict; the solution checker's result is the Test Agent's evidence | The signed release bundle, built by the pipeline after the verdict, which holds the upload key |
+| **Test and acceptance** | Imported into the test environment by the team, with test connections and synthetic data; the Test Agent runs the Playwright and permission tests there, and records them | Installed by the team on managed emulators and test devices, against the backend's test environment; the Test Agent records the tests |
 | **Production** | Imported into the production environment by the deployment process's own identity; connection references and environment variables set from the release | Published to NATAX's managed app store as a private app, in stages: 5% of devices, then 25%, then everyone, each stage observed for a day |
 | **Verification** | Flow failures and the app's errors compared with the hour before | Crash rate and the backend's error rate for the new version, compared with the previous version; a crash rate above the alert threshold halts the rollout |
 | **Rollback** | Re-import the previous managed solution (`solution-import`) | Three steps, together ([AND-13](../../platforms/android/standards.md#and-13-offline-work-survives-an-update-and-a-rollback)): halt the rollout; the backend refuses the version and tells it to send its outbox; then, on each device that updated and once its outbox is empty, device management uninstalls the app and installs the previous release's own signed APK. No rebuild: the same artifact, by digest ([DEL-01](../principles/delivery.md#del-01-every-change-is-a-release-candidate-with-evidence)) |

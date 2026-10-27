@@ -79,7 +79,6 @@ Power Apps make building so easy that a team can have a working app by lunchtime
 **Verified by.** `test`:
 - The app's declared connectors are checked against the allowlist (check-dependencies).
 - The tenant's policies and environment settings are checked against [approved-connectors.yaml](approved-connectors.yaml) every day ([DEL-04](../../enterprise-architecture/principles/delivery.md#del-04-infrastructure-and-network-are-code)).
-- The Security Agent's sweeps look for apps that use connectors outside the list.
 
 ### PA-09: NATAX systems only through their APIs, as the signed-in user
 **Rule.** Power Apps reach NATAX systems only through **custom connectors** to their published APIs, never through a direct database connection.

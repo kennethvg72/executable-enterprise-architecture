@@ -19,8 +19,8 @@ NATAX builds and changes solutions with a small cast of humans and AI agents. Ea
  (central agents)   │ Governance Agent: reviews against the architecture, runs       │
                     │ deterministic checks, approves or rejects with a path forward  │
                     │        ▲ findings                                              │
-                    │ Security Agent: attacks it in acceptance; attacks the whole    │
-                    │ landscape when threats change                                  │
+                    │ Security Agent: reviews it as an attacker would, and audits    │
+                    │ its security tests; runs nothing                               │
                     │        │                                                       │
                     │        ▼ approved                                              │
                     │ Deployment: the only path to production                        │
@@ -36,7 +36,7 @@ NATAX builds and changes solutions with a small cast of humans and AI agents. Ea
 | **Development Agent** | AI, local | Discusses and challenges requirements, proposes architecture, coordinates the other local agents, implements. | [development-agent.md](development-agent.md) |
 | **Local Governance Agent** | AI, local | Challenges designs against the architecture *before* they are built. | [local-governance-agent.md](local-governance-agent.md) |
 | **Test Agent** | AI, local | Writes and maintains the tests. Tries to break the solution. | [test-agent.md](test-agent.md) |
-| **Security Agent** | AI, central | Attacks release candidates in acceptance, and the landscape when threats change. Reports findings; never decides. | [security-agent.md](security-agent.md) |
+| **Security Agent** | AI, central | Reviews release candidates as an attacker would, and audits the Test Agent's security tests. Runs nothing. Reports findings; never decides. | [security-agent.md](security-agent.md) |
 | **Governance Agent** | AI, central | Judges release candidates against the architecture, runs the required checks, and decides. | [governance-agent.md](governance-agent.md) |
 | **Steward Agent** | AI, central | Keeps a shared system's source for the team that owns it, with an intent for every entry; tests it from the intents and judges conflicts between them. Approves changes together with the Governance Agent; never deploys ([OWN-10](../principles/ownership.md#own-10-a-shared-system-has-one-steward)). | [steward-agent.md](steward-agent.md) |
 | **Network Agent** | AI, central | The steward of the network, for Central IT's network specialists: the only one who writes its rules. | [network/agents/](../../network/agents/README.md#network-agent) |

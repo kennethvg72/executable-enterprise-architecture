@@ -1,7 +1,7 @@
 // The Governance Agent, run once per release candidate (pipeline/README.md, stages 4 and 7),
 // without a conversation: whoever wants the release never talks to the judge (AGT-01).
 //
-// Usage: node enterprise-architecture/tools/govern.ts <application repository> <candidate id> [--isolated]
+// Usage: node enterprise-architecture/tools/govern.ts <application repository> <candidate id>
 //
 // 1. The model must be pinned in pipeline/models.yaml and have passed the regression set twice
 //    under that pin (AGT-11, regression.ts). Otherwise nothing runs.
@@ -37,10 +37,10 @@ const sha256 = (text: string) => `sha256:${createHash('sha256').update(text).dig
 const ROLE = join(REPO_ROOT, 'enterprise-architecture', 'agents', 'governance-agent.md');
 
 /** The deterministic stage, as its own process: pipeline.ts, on the clone. */
-const deterministic = (isolated: boolean): Deterministic => (appDir, candidateDir) => {
+const deterministic: Deterministic = (appDir, candidateDir) => {
   const env = { ...process.env };
   delete env.NODE_TEST_CONTEXT;
-  const r = spawnSync(process.execPath, [join(REPO_ROOT, 'enterprise-architecture', 'tools', 'pipeline.ts'), appDir, '--candidate', candidateDir, ...(isolated ? ['--isolated'] : [])],
+  const r = spawnSync(process.execPath, [join(REPO_ROOT, 'enterprise-architecture', 'tools', 'pipeline.ts'), appDir, '--candidate', candidateDir],
     { encoding: 'utf8', env, maxBuffer: 64 * 1024 * 1024 });
   return { status: r.status === 0 ? 'PASS' : r.status === 3 ? 'INCOMPLETE' : 'FAIL', output: `${r.stdout}${r.stderr}` };
 };
@@ -64,7 +64,7 @@ Write two sections in Markdown, and nothing else:
 export interface Governed { verdict?: 'approved' | 'rejected'; record?: string; problems: string[] }
 
 export async function govern(appDir: string, id: string, options: {
-  ask?: Ask; deterministic?: Deterministic; store?: string; isolated?: boolean; models?: string; now?: Date;
+  ask?: Ask; deterministic?: Deterministic; store?: string; models?: string; now?: Date;
 } = {}): Promise<Governed> {
   const now = options.now ?? new Date();
   const { pin, problem } = pinnedModel('governance-agent', options.models ?? MODELS);
@@ -89,7 +89,7 @@ export async function govern(appDir: string, id: string, options: {
   // The candidate's release folder may be newer than its commit.
   cpSync(join(appDir, 'releases', id), join(clone, 'releases', id), { recursive: true });
 
-  const stage = (options.deterministic ?? deterministic(options.isolated ?? false))(clone, join(clone, 'releases', id));
+  const stage = (options.deterministic ?? deterministic)(clone, join(clone, 'releases', id));
   const pipelineFile = join(work, 'pipeline.txt');
   writeFileSync(pipelineFile, stage.output);
 
@@ -176,13 +176,13 @@ export async function govern(appDir: string, id: string, options: {
 }
 
 if (import.meta.main) {
-  const { values, positionals } = parseArgs({ allowPositionals: true, options: { isolated: { type: 'boolean', default: false } } });
+  const { positionals } = parseArgs({ allowPositionals: true });
   const [app, id] = positionals;
   if (!app || !id) {
-    console.error('Usage: node enterprise-architecture/tools/govern.ts <application repository> <candidate id> [--isolated]');
+    console.error('Usage: node enterprise-architecture/tools/govern.ts <application repository> <candidate id>');
     process.exit(3);
   }
-  const result = await govern(resolve(app), id, { isolated: values.isolated });
+  const result = await govern(resolve(app), id);
   for (const p of result.problems) console.log(`NO VERDICT: ${p}`);
   if (result.verdict) console.log(`Verdict: ${result.verdict}\nRecord: ${result.record}`);
   process.exitCode = result.verdict === 'approved' ? 0 : result.verdict === 'rejected' ? 1 : 3;
